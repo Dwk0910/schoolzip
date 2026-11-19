@@ -237,7 +237,7 @@ void main() {
     await check('이번 주', '3/9', '미술');
     current.complete(table('2026-03-09', '국어'));
     await tester.pumpAndSettle();
-    expect(find.text('이혜'), findsOneWidget);
+    expect(find.text('이혜*'), findsOneWidget);
   });
   testWidgets('과목과 학교별 교사 이름을 저장하고 다시 열어 복원한다', (tester) async {
     SharedPreferencesAsyncPlatform.instance =
@@ -263,9 +263,24 @@ void main() {
                 '1': {
                   '1': [
                     [
-                      {'period': 1, 'subject': '수학', 'teacher': '이혜'},
-                      {'period': 2, 'subject': '음악', 'teacher': '이혜'},
-                      {'period': 3, 'subject': '수학', 'teacher': '이혜'},
+                      {
+                        'period': 1,
+                        'subject': '수학',
+                        'teacher': '이혜',
+                        'teacherId': 'roster:1',
+                      },
+                      {
+                        'period': 2,
+                        'subject': '음악',
+                        'teacher': '이혜',
+                        'teacherId': 'roster:1',
+                      },
+                      {
+                        'period': 3,
+                        'subject': '수학',
+                        'teacher': '이혜',
+                        'teacherId': 'roster:1',
+                      },
                     ],
                   ],
                 },
@@ -282,7 +297,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('선생님 이름 설정'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('수학'));
+    await tester.tap(find.text('수학 · 음악'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(EditableText), '이혜진');
     await tester.tap(find.text('저장'));
@@ -291,20 +306,20 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.bySemanticsLabel('시간표').last);
     await tester.pumpAndSettle();
-    expect(find.text('이혜진'), findsNWidgets(2));
-    expect(find.text('이혜'), findsOneWidget);
+    expect(find.text('이혜진'), findsNWidgets(3));
+    expect(find.text('이혜*'), findsNothing);
     expect(jsonDecode(published.last.arguments['names']), {
-      '수학': {'이혜': '이혜진'},
+      '@id:roster:1': {'이혜': '이혜진'},
     });
     await openSchool(2);
-    expect(find.text('이혜'), findsNWidgets(3));
+    expect(find.text('이혜*'), findsNWidgets(3));
     await openSchool(1);
-    expect(find.text('이혜진'), findsNWidgets(2));
+    expect(find.text('이혜진'), findsNWidgets(3));
     await tester.tap(find.text('설정'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('선생님 이름 설정'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('수학'));
+    await tester.tap(find.text('수학 · 음악'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('컴시간 이름으로 복원'));
     await tester.pumpAndSettle();
@@ -312,7 +327,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.bySemanticsLabel('시간표').last);
     await tester.pumpAndSettle();
-    expect(find.text('이혜'), findsNWidgets(3));
+    expect(find.text('이혜*'), findsNWidgets(3));
   });
   testWidgets('학교와 반을 선택하고 다음 주 시간표로 전환한다', (tester) async {
     SharedPreferencesAsyncPlatform.instance =
@@ -468,7 +483,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('변경 전'), findsOneWidget);
     expect(find.text('공수2'), findsOneWidget);
-    expect(find.text('김가 선생님'), findsOneWidget);
+    expect(find.text('김가* 선생님'), findsOneWidget);
     expect(find.text('변경 후'), findsOneWidget);
     expect(
       find.descendant(

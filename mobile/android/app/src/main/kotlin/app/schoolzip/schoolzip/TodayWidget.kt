@@ -94,7 +94,9 @@ class TodayWidget : AppWidgetProvider() {
                         item.setTextViewText(R.id.period, "${lesson.getInt("period")}교시")
                         item.setTextViewText(R.id.subject, lesson.getString("subject"))
                         val original = if (lesson.isNull("teacher")) "" else lesson.getString("teacher").trim()
-                        val teacher = names.optJSONObject(lesson.getString("subject"))?.optString(original, original) ?: original
+                        val key = if (lesson.has("teacherId")) "@id:" + lesson.getString("teacherId") else lesson.getString("subject")
+                        val fallback = if (!original.contains("*") && original.codePointCount(0, original.length) == 2) original + "*" else original
+                        val teacher = names.optJSONObject(key)?.optString(original, fallback) ?: fallback
                         item.setTextViewText(R.id.teacher, teacher)
                         item.setViewVisibility(R.id.teacher, if (teacher.isEmpty()) View.GONE else View.VISIBLE)
 

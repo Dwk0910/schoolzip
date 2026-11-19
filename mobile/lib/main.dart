@@ -1091,11 +1091,67 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
   }
 
   String displayTeacher(Map<String, dynamic> lesson) {
-    final original = (lesson['teacher'] as String?)?.trim() ?? '';
-    return teacherNames[lesson['subject']]?[original] ?? original;
+    return resolvedTeacherName(teacherNames, lesson);
+  }
+
+  List<Map<String, String>> teacherSettingsEntries(
+    Map<String, dynamic> grades,
+  ) {
+    final choices = teacherChoices(grades, displayTeacher);
+    return [
+      for (final choice in choices)
+        {
+          'subject': choice.subjects,
+          'original': choice.original,
+          'current': choice.label,
+          'key': teacherStorageKey(choice.lessons.first.lesson),
+          if (choice.lessons.first.lesson['teacherId'] != null)
+            'teacherId': choice.lessons.first.lesson['teacherId'] as String,
+        },
+    ];
   }
 
   Future<void> openTeachers() async {
+    if (Platform.isIOS) {
+      const channel = MethodChannel('schoolzip/editors');
+      channel.setMethodCallHandler((call) async {
+        if (call.method == 'loadTeachers') {
+          dynamic table;
+          try {
+            table = await data;
+          } catch (_) {
+            table = offlineWeek;
+          }
+          if (table == null) {
+            throw PlatformException(
+              code: 'load',
+              message: '시간표를 불러오지 못했어요. 다시 시도해 주세요.',
+            );
+          }
+          return teacherSettingsEntries(
+            table['grades'] as Map<String, dynamic>,
+          );
+        }
+        if (call.method == 'saveTeacher') {
+          final args = Map<String, dynamic>.from(call.arguments as Map);
+          final updated = await nameStore.save(
+            args['key'] ?? args['subject'],
+            args['original'],
+            args['value'],
+          );
+          if (mounted) setState(() => teacherNames = updated);
+          await syncTeacherNames(nameStore.code, updated);
+          return null;
+        }
+        throw MissingPluginException();
+      });
+      try {
+        await channel.invokeMethod<void>('teachers');
+      } finally {
+        channel.setMethodCallHandler(null);
+      }
+      return;
+    }
     var source = data;
     await Navigator.push<void>(
       context,
@@ -1123,50 +1179,39 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
                     if (table == null) {
                       return const Center(child: CupertinoActivityIndicator());
                     }
-                    final entries = <(String, String)>{
-                      for (final subject in teacherNames.entries)
-                        for (final name in subject.value.keys)
-                          (subject.key, name),
-                    };
-                    for (final rooms in (table['grades'] as Map).values) {
-                      for (final days in (rooms as Map).values) {
-                        for (final day in days) {
-                          for (final lesson in day) {
-                            for (final item in [lesson, lesson['original']]) {
-                              final subject = item?['subject'] as String? ?? '';
-                              final name = (item?['teacher'] as String? ?? '')
-                                  .trim();
-                              if (subject.isNotEmpty && name.isNotEmpty) {
-                                entries.add((subject, name));
-                              }
-                            }
-                          }
-                        }
-                      }
+                    final sorted = teacherSettingsEntries(
+                      table['grades'] as Map<String, dynamic>,
+                    );
+                    Widget settingRow(int i) {
+                      final entry = sorted[i];
+                      final lesson = {
+                        'subject': entry['subject'],
+                        'teacher': entry['original'],
+                        if (entry['teacherId'] != null)
+                          'teacherId': entry['teacherId'],
+                      };
+                      return CupertinoListTile(
+                        title: Text('${entry['current']} 선생님'),
+                        subtitle: Text(entry['subject']!),
+                        trailing: const CupertinoListTileChevron(),
+                        onTap: () async {
+                          await editTeacher(lesson);
+                          if (ctx.mounted) refresh(() {});
+                        },
+                      );
                     }
-                    final sorted = entries.toList()
-                      ..sort((a, b) {
-                        final cmp = a.$1.compareTo(b.$1);
-                        return cmp == 0 ? a.$2.compareTo(b.$2) : cmp;
-                      });
-                    if (sorted.isEmpty) {
-                      return const Center(child: Text('등록된 선생님이 없어요'));
-                    }
-                    return ListView.builder(
-                      itemCount: sorted.length,
-                      itemBuilder: (_, i) {
-                        final (subject, name) = sorted[i];
-                        final lesson = {'subject': subject, 'teacher': name};
-                        return CupertinoListTile(
-                          title: Text(subject),
-                          additionalInfo: Text(displayTeacher(lesson)),
-                          trailing: const CupertinoListTileChevron(),
-                          onTap: () async {
-                            await editTeacher(lesson);
-                            if (ctx.mounted) refresh(() {});
-                          },
-                        );
-                      },
+
+                    return ListView(
+                      children: [
+                        if (sorted.isNotEmpty)
+                          CupertinoListSection.insetGrouped(
+                            header: const Text('이름 직접 수정'),
+                            children: [
+                              for (var i = 0; i < sorted.length; i++)
+                                settingRow(i),
+                            ],
+                          ),
+                      ],
                     );
                   },
                 ),
@@ -1180,7 +1225,32 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
 
   Future<void> editTeacher(Map<String, dynamic> lesson) async {
     final subject = lesson['subject'] as String;
+    final storageKey = teacherStorageKey(lesson);
     final original = (lesson['teacher'] as String).trim();
+    if (Platform.isIOS) {
+      const channel = MethodChannel('schoolzip/editors');
+      channel.setMethodCallHandler((call) async {
+        if (call.method != 'saveTeacher') throw MissingPluginException();
+        final args = Map<String, dynamic>.from(call.arguments as Map);
+        final updated = await nameStore.save(
+          storageKey,
+          original,
+          args['value'] as String,
+        );
+        if (mounted) setState(() => teacherNames = updated);
+        await syncTeacherNames(nameStore.code, updated);
+      });
+      try {
+        await channel.invokeMethod<void>('teacher', {
+          'subject': subject,
+          'original': original,
+          'current': displayTeacher(lesson),
+        });
+      } finally {
+        channel.setMethodCallHandler(null);
+      }
+      return;
+    }
     await showSchoolSheet<void>(
       context: context,
       builder: (_) => TeacherNameEditor(
@@ -1188,7 +1258,7 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
         original: original,
         current: displayTeacher(lesson),
         onSave: (value) async {
-          final updated = await nameStore.save(subject, original, value);
+          final updated = await nameStore.save(storageKey, original, value);
           if (mounted) setState(() => teacherNames = updated);
           unawaited(syncTeacherNames(nameStore.code, updated));
         },
@@ -1247,6 +1317,22 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
               'code': widget.school['code'].toString(),
               'week': requestedWeek.toString(),
             }));
+    final identityLessons = <Map<String, dynamic>>[
+      for (final entry in schoolLessons(
+        table['grades'] as Map<String, dynamic>,
+      )) ...[
+        entry.lesson,
+        if (entry.lesson['original'] is Map<String, dynamic>)
+          entry.lesson['original'] as Map<String, dynamic>,
+      ],
+    ];
+    if (identityLessons.any((lesson) => lesson['teacherId'] != null)) {
+      final migrated = await nameStore.migrate(identityLessons);
+      if (mounted) {
+        teacherNames = migrated;
+        unawaited(syncTeacherNames(nameStore.code, migrated));
+      }
+    }
     if (mounted && week == requestedWeek) {
       timetableMonday = DateTime.parse(table['start'])
           .subtract(Duration(days: 7 * requestedWeek));

@@ -19,6 +19,7 @@ struct Lesson: Codable {
     let period: Int
     let subject: String
     var teacher: String? = nil
+    var teacherId: String? = nil
     var startMinute: Int? = nil
     var endMinute: Int? = nil
 
@@ -64,9 +65,10 @@ struct Provider: TimelineProvider {
             .flatMap { try? JSONDecoder().decode([String:[String:String]].self, from: $0) } ?? [:]
         let lessons = days?[formatter().string(from:date)]?.map { lesson in
             var displayed = lesson
-            if let original = lesson.teacher?.trimmingCharacters(in: .whitespacesAndNewlines),
-               let name = names[lesson.subject]?[original] {
-                displayed.teacher = name
+            if let original = lesson.teacher?.trimmingCharacters(in: .whitespacesAndNewlines) {
+                let key = lesson.teacherId.map { "@id:\($0)" } ?? lesson.subject
+                let fallback = !original.contains("*") && original.count == 2 ? original + "*" : original
+                displayed.teacher = names[key]?[original] ?? fallback
             }
             return displayed
         }

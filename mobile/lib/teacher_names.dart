@@ -7,6 +7,21 @@ import 'controls.dart';
 
 typedef TeacherNames = Map<String, Map<String, String>>;
 
+String originalTeacherLabel(String name) {
+  final raw = name.trim();
+  return !raw.contains('*') && raw.runes.length == 2 ? '$raw*' : raw;
+}
+
+String teacherStorageKey(Map<String, dynamic> lesson) =>
+    lesson['teacherId'] != null
+    ? '@id:${lesson['teacherId']}'
+    : lesson['subject'] as String;
+
+String resolvedTeacherName(TeacherNames names, Map<String, dynamic> lesson) {
+  final raw = (lesson['teacher'] as String? ?? '').trim();
+  return names[teacherStorageKey(lesson)]?[raw] ?? originalTeacherLabel(raw);
+}
+
 class SchoolTeacherNames {
   final String code;
   SchoolTeacherNames(this.code);
@@ -20,6 +35,50 @@ class SchoolTeacherNames {
     );
   }
 
+  Future<TeacherNames> migrate(List<Map<String, dynamic>> lessons) async {
+    final names = await read();
+    var changed = false;
+    final originals = lessons.map((e) => e['teacher'] as String? ?? '').toSet();
+    for (final raw in originals) {
+      final entries = lessons
+          .where(
+            (e) =>
+                originalTeacherLabel(e['teacher'] as String? ?? '') ==
+                    originalTeacherLabel(raw) &&
+                e['teacherId'] != null,
+          )
+          .toList();
+      final ids = entries.map(teacherStorageKey).toSet();
+      if (ids.length != 1) continue;
+      final old = <(String, String, String)>[];
+      for (final subject in names.entries.toList()) {
+        if (subject.key.startsWith('@')) continue;
+        for (final alias in subject.value.entries) {
+          final marker = '${subject.key}\u0000${alias.key}';
+          if (originalTeacherLabel(alias.key) == originalTeacherLabel(raw) &&
+              entries.any((e) => e['subject'] == subject.key) &&
+              names['@migrated']?[marker] == null) {
+            old.add((subject.key, alias.key, alias.value));
+          }
+        }
+      }
+      if (old.isEmpty || old.map((e) => e.$3).toSet().length != 1) continue;
+      (names[ids.single] ??= {}).putIfAbsent(raw, () => old.first.$3);
+      for (final entry in old) {
+        (names['@migrated'] ??= {})['${entry.$1}\u0000${entry.$2}'] =
+            ids.single;
+      }
+      changed = true;
+    }
+    if (changed) {
+      await SharedPreferencesAsync().setString(
+        'teacherNames.$code',
+        jsonEncode(names),
+      );
+    }
+    return names;
+  }
+
   Future<TeacherNames> save(
     String subject,
     String original,
@@ -27,7 +86,9 @@ class SchoolTeacherNames {
   ) async {
     final names = await read();
     final value = input.trim();
-    if (value.isEmpty || value == original) {
+    if (value.isEmpty ||
+        value == original ||
+        value == originalTeacherLabel(original)) {
       names[subject]?.remove(original);
       if (names[subject]?.isEmpty == true) names.remove(subject);
     } else {
@@ -152,7 +213,7 @@ class _TeacherNameEditorState extends State<TeacherNameEditor> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '이 학교의 같은 과목과 표시명에 적용돼요.',
+                  '현재 교사 명단에서 같은 선생님의 모든 과목에 적용돼요.',
                   style: TextStyle(color: secondary, fontSize: 13),
                 ),
                 if (error != null)
