@@ -198,7 +198,7 @@ private final class SettingsTable: UITableViewController {
   private let titleHeader = UIView()
   private var headerWidth: CGFloat = 0
   private var headerHeight: CGFloat = 0
-  private let headers = ["학교 설정", "시간표", "급식", "데이터 관리"]
+  private let headers = ["학교 설정", "시간표", "급식", "기타"]
   init(_ selection: [String:String], _ channel: FlutterMethodChannel) {
     self.selection = selection
     self.channel = channel
@@ -257,7 +257,7 @@ private final class SettingsTable: UITableViewController {
     }
   }
   override func numberOfSections(in tableView: UITableView) -> Int { headers.count }
-  override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 1 ? 3 : 1 }
+  override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 1 ? 3 : section == 3 ? 2 : 1 }
   override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { headers[section] }
   override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
     let cell = UITableViewCell(style: indexPath.section == 0 ? .value1 : .default, reuseIdentifier: nil)
@@ -273,8 +273,8 @@ private final class SettingsTable: UITableViewController {
       let count = selection["allergyCount"] ?? "0"
       content.secondaryText = count == "0" ? "선택 안 함" : "\(count)개 선택"
     default:
-      content.text = "전체 초기화"
-      content.textProperties.color = .systemRed
+      content.text = indexPath.row == 0 ? "사용 안내 다시 보기" : "전체 초기화"
+      content.textProperties.color = indexPath.row == 0 ? .systemBlue : .systemRed
     }
     cell.contentConfiguration = content
     cell.accessoryType = indexPath.section == 3 ? .none : .disclosureIndicator
@@ -296,7 +296,8 @@ private final class SettingsTable: UITableViewController {
   override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     tableView.deselectRow(at: indexPath, animated: true)
     if indexPath.section == 1 && indexPath.row < 2 { return }
-    channel.invokeMethod(["school","teachers","allergies","reset"][indexPath.section], arguments: nil)
+    let action = indexPath.section == 3 ? (indexPath.row == 0 ? "guide" : "reset") : ["school","teachers","allergies"][indexPath.section]
+    channel.invokeMethod(action, arguments: nil)
   }
 }
 

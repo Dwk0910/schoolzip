@@ -12,7 +12,7 @@ class SettingsPage extends StatefulWidget {
   final int allergyCount;
   final bool teachers, highlight;
   final void Function(String, bool) onDisplay;
-  final VoidCallback onSchool, onTeachers, onReset;
+  final VoidCallback onSchool, onTeachers, onReset, onGuide;
   const SettingsPage({
     required this.onAllergies,
     required this.allergyCount,
@@ -25,6 +25,7 @@ class SettingsPage extends StatefulWidget {
     required this.onSchool,
     required this.onTeachers,
     required this.onReset,
+    required this.onGuide,
   });
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -86,6 +87,9 @@ class _SettingsPageState extends State<SettingsPage> {
                 break;
               case 'allergies':
                 widget.onAllergies();
+                break;
+              case 'guide':
+                widget.onGuide();
                 break;
               case 'reset':
                 widget.onReset();
@@ -249,14 +253,35 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ),
                   section(
-                    '데이터 관리',
-                    CupertinoListTile(
-                      padding: rowPadding,
-                      title: const Text(
-                        '전체 초기화',
-                        style: TextStyle(color: CupertinoColors.systemRed),
-                      ),
-                      onTap: widget.onReset,
+                    '기타',
+                    Column(
+                      children: [
+                        CupertinoListTile(
+                          padding: rowPadding,
+                          title: const Text(
+                            '사용 안내 다시 보기',
+                            style: TextStyle(color: CupertinoColors.systemBlue),
+                          ),
+                          onTap: widget.onGuide,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 14),
+                          child: Container(
+                            height: .5,
+                            color: CupertinoColors.separator.resolveFrom(
+                              context,
+                            ),
+                          ),
+                        ),
+                        CupertinoListTile(
+                          padding: rowPadding,
+                          title: const Text(
+                            '전체 초기화',
+                            style: TextStyle(color: CupertinoColors.systemRed),
+                          ),
+                          onTap: widget.onReset,
+                        ),
+                      ],
                     ),
                   ),
                 ],

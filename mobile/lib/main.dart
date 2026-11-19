@@ -377,6 +377,7 @@ class _SchoolHomeState extends State<SchoolHome> {
                   onSchool: changeSchool,
                   onTeachers: () => weeklyKey.currentState?.openTeachers(),
                   onReset: resetAll,
+                  onGuide: () => weeklyKey.currentState?.openGuide(),
                 ),
               ],
             ),
@@ -1848,10 +1849,20 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
         guideScheduled = false;
         return;
       }
+      await openGuide(finish: finish);
+    });
+  }
+
+  bool guideOpen = false;
+  Future<void> openGuide({Future<void> Function()? finish}) async {
+    if (!mounted || guideOpen) return;
+    guideOpen = true;
+    try {
       await showSchoolSheet<void>(
         context: context,
         barrierDismissible: false,
         builder: (ctx) => IntroGuide(
+          replay: finish == null,
           classButton: classLabelButton(GuideExample.grade, GuideExample.room),
           grid: weekGrid(
             GuideExample.monday,
@@ -1868,12 +1879,22 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
             preview: true,
           ),
           onFinish: () async {
-            await finish();
+            if (finish != null) {
+              await finish();
+              unawaited(
+                Future<void>.delayed(
+                  const Duration(seconds: 1),
+                  offerSharedNames,
+                ),
+              );
+            }
             if (ctx.mounted) Navigator.pop(ctx);
           },
         ),
       );
-    });
+    } finally {
+      guideOpen = false;
+    }
   }
 
   Widget classPicker(

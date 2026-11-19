@@ -13,6 +13,63 @@ import 'package:schoolzip/intro_guide.dart';
 import 'package:schoolzip/controls.dart';
 
 void main() {
+  testWidgets('설정에서 안내를 다시 보고 닫아도 저장된 설정이 유지된다', (tester) async {
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
+    final prefs = SharedPreferencesAsync();
+    await prefs.setBool('guideSeen', true);
+    await prefs.setString('teacherNames.12', '{"@id:abc":{"김가*":"김가람"}}');
+    final before = await prefs.getAll();
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: SchoolHome(
+          saved: const {'name': '검증학교', 'code': 12, 'grade': '1', 'room': '1'},
+          fetch: (_, _) async => {
+            'start': '2026-11-16',
+            'updated': '2026-11-20',
+            'grades': {
+              '1': {
+                '1': [
+                  [
+                    {'period': 1, 'subject': '국어', 'teacher': '가교사'},
+                  ],
+                ],
+              },
+            },
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('설정'));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byType(CustomScrollView).last,
+      const Offset(0, -500),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('기타'), findsOneWidget);
+    expect(find.text('전체 초기화'), findsOneWidget);
+    await tester.tap(find.text('사용 안내 다시 보기'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 5'), findsOneWidget);
+    for (var i = 0; i < 4; i++) {
+      await tester.tap(find.text('다음'));
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('5 / 5'), findsOneWidget);
+    await tester.tap(find.text('닫기'));
+    await tester.pumpAndSettle();
+    expect(find.byType(IntroGuide), findsNothing);
+    for (final entry in before.entries) {
+      expect((await prefs.getAll())[entry.key], entry.value);
+    }
+    await tester.tap(find.text('사용 안내 다시 보기'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 5'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('새로 설치하면 도움말보다 먼저 학교 설정이 열린다', (tester) async {
     SharedPreferencesAsyncPlatform.instance =
         InMemorySharedPreferencesAsync.empty();

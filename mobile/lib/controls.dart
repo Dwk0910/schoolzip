@@ -173,53 +173,14 @@ class SetupProgress extends StatelessWidget {
   final int step;
   final bool complete;
   const SetupProgress({super.key, required this.step, required this.complete});
-
   @override
   Widget build(BuildContext context) {
     final accent = CupertinoColors.systemIndigo.resolveFrom(context);
     final muted = CupertinoColors.secondaryLabel.resolveFrom(context);
-    final track = CupertinoColors.tertiarySystemFill.resolveFrom(context);
+    final track = CupertinoColors.systemGrey4.resolveFrom(context);
     final motion = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : duration;
-    Widget segment(int index, String title, IconData icon) {
-      final done = index < step || complete;
-      final active = index == step && !complete;
-      return Expanded(
-        child: Row(
-          children: [
-            AnimatedContainer(
-              duration: motion,
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: done || active ? accent : track,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                done ? CupertinoIcons.check_mark : icon,
-                size: 17,
-                color: done || active ? CupertinoColors.white : muted,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: active || done
-                      ? CupertinoColors.label.resolveFrom(context)
-                      : muted,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     return Semantics(
       label: complete
           ? '학교·학급 설정 완료'
@@ -228,54 +189,103 @@ class SetupProgress extends StatelessWidget {
           : '2단계 중 1단계, 학교 선택',
       excludeSemantics: true,
       liveRegion: true,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(
-            context,
-          ),
-          borderRadius: BorderRadius.circular(20),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              children: [
-                segment(0, '학교 선택', CupertinoIcons.search),
-                segment(1, '학급 선택', CupertinoIcons.person_2),
-              ],
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: ColoredBox(
-                color: track,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: TweenAnimationBuilder<double>(
-                    duration: motion,
-                    curve: Curves.easeInOutCubic,
-                    tween: Tween<double>(
-                      begin: 0,
-                      end: complete
-                          ? 1
-                          : step == 1
-                          ? .65
-                          : .15,
-                    ),
-                    builder: (_, value, _) => FractionallySizedBox(
-                      widthFactor: value,
+            SizedBox(
+              height: 24,
+              child: LayoutBuilder(
+                builder: (_, box) => Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Positioned(
+                      left: box.maxWidth / 4,
+                      right: box.maxWidth / 4,
                       child: Container(
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: accent,
-                          borderRadius: BorderRadius.circular(6),
+                        key: const ValueKey('setup-connecting-line'),
+                        height: 3,
+                        color: track,
+                        alignment: Alignment.centerLeft,
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween(
+                            begin: 0,
+                            end: step > 0 || complete ? 1 : 0,
+                          ),
+                          duration: motion,
+                          curve: Curves.easeInOutCubic,
+                          builder: (_, value, _) => FractionallySizedBox(
+                            widthFactor: value,
+                            child: ColoredBox(
+                              color: accent,
+                              child: const SizedBox(height: 3),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                    Row(
+                      children: [
+                        for (var index = 0; index < 2; index++)
+                          Expanded(
+                            child: Center(
+                              child: AnimatedContainer(
+                                key: ValueKey('setup-step-$index'),
+                                duration: motion,
+                                width: 24,
+                                height: 24,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: index <= step || complete
+                                      ? accent
+                                      : track,
+                                ),
+                                alignment: Alignment.center,
+                                child: complete || index < step
+                                    ? const Icon(
+                                        CupertinoIcons.check_mark,
+                                        size: 14,
+                                        color: CupertinoColors.white,
+                                      )
+                                    : Text(
+                                        '${index + 1}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: index == step
+                                              ? CupertinoColors.white
+                                              : muted,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                for (var index = 0; index < 2; index++)
+                  Expanded(
+                    child: Text(
+                      index == 0 ? '학교 선택' : '학급 선택',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: index == step
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        color: index <= step || complete
+                            ? CupertinoColors.label.resolveFrom(context)
+                            : muted,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ],
         ),

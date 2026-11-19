@@ -43,12 +43,14 @@ class GuideExample {
 class IntroGuide extends StatefulWidget {
   final Widget grid, weekHeader, classButton;
   final Future<void> Function() onFinish;
+  final bool replay;
   const IntroGuide({
     super.key,
     required this.grid,
     required this.weekHeader,
     required this.classButton,
     required this.onFinish,
+    this.replay = false,
   });
 
   @override
@@ -397,7 +399,7 @@ class _IntroGuideState extends State<IntroGuide> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   child: Text(
                     page == slides.length - 1
-                        ? '시작하기!'
+                        ? (widget.replay ? '닫기' : '시작하기!')
                         : '다음',
                     style: const TextStyle(
                       color: CupertinoColors.white,
