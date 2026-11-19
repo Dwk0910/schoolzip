@@ -73,6 +73,48 @@ void main() {
     expect(['10', '2', '1']..sort(naturalOrder), ['1', '2', '10']);
   });
 
+  testWidgets('학급별 가로 스크롤바는 안전 영역에 밀리지 않고 표 아래에 놓인다', (tester) async {
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: MediaQuery(
+          data: const MediaQueryData(padding: EdgeInsets.only(bottom: 34)),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              width: 180,
+              child: TimetableOverview(
+                mode: TimetableMode.classes,
+                grades: fixture(0)['grades'],
+                grade: '1',
+                room: '1',
+                start: DateTime(2026, 11, 16),
+                selectedDay: 0,
+                teacherLabel: (e) => e['teacher'],
+                showTeachers: true,
+                onChange: (_, _, _) async {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final scrollbar = find.byType(CupertinoScrollbar);
+    expect(MediaQuery.paddingOf(tester.element(scrollbar)).bottom, 0);
+    final grid = find.byType(TimetableGrid);
+    expect(
+      tester.getBottomLeft(scrollbar).dy - tester.getBottomLeft(grid).dy,
+      16,
+    );
+    await tester.drag(find.byType(SingleChildScrollView), const Offset(-80, 0));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getBottomLeft(scrollbar).dy - tester.getBottomLeft(grid).dy,
+      16,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('선택한 선생님의 수업이 없는 주에도 다른 선생님으로 바뀌지 않는다', (tester) async {
     await tester.pumpWidget(
       CupertinoApp(

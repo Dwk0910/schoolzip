@@ -481,19 +481,23 @@ class _TimetableOverviewState extends State<TimetableOverview> {
         TimetableGrid(columns: columns, cells: cells, periods: periods);
     if (teacherMode) return grid();
     return LayoutBuilder(
-      builder: (ctx, box) => CupertinoScrollbar(
-        controller: horizontal,
-        thumbVisibility: true,
-        child: SingleChildScrollView(
+      builder: (ctx, box) => MediaQuery.removePadding(
+        context: ctx,
+        removeBottom: true,
+        child: CupertinoScrollbar(
           controller: horizontal,
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.only(bottom: 12),
-          child: SizedBox(
-            width: (34 + rooms.length * 64.0).clamp(
-              box.maxWidth,
-              double.infinity,
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            controller: horizontal,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(bottom: 16),
+            child: SizedBox(
+              width: (34 + rooms.length * 64.0).clamp(
+                box.maxWidth,
+                double.infinity,
+              ),
+              child: grid(),
             ),
-            child: grid(),
           ),
         ),
       ),
