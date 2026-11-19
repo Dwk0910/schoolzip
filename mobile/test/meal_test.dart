@@ -4,6 +4,36 @@ import 'package:schoolzip/meals.dart';
 import 'package:schoolzip/sheets.dart';
 
 void main() {
+  testWidgets('오늘 표시는 선택 날짜와 독립적이고 달을 왕복해도 유지된다', (tester) async {
+    final korea = DateTime.now().toUtc().add(const Duration(hours: 9));
+    final today = DateTime(korea.year, korea.month, korea.day);
+    final other = DateTime(today.year, today.month, today.day == 1 ? 2 : 1);
+    Future<void> show(DateTime initial) async {
+      await tester.pumpWidget(
+        CupertinoApp(
+          home: MealDateSheet(key: ValueKey(initial), initial: initial),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await show(other);
+    expect(find.byKey(const ValueKey('meal-calendar-today')), findsOneWidget);
+    final day = find.byWidgetPredicate(
+      (w) => w is Semantics && (w.properties.label ?? '').endsWith(', 오늘'),
+    );
+    expect(day, findsOneWidget);
+    expect(tester.widget<Semantics>(day).properties.selected, false);
+    await tester.tap(find.bySemanticsLabel('다음 달'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('meal-calendar-today')), findsNothing);
+    await tester.tap(find.bySemanticsLabel('이전 달'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('meal-calendar-today')), findsOneWidget);
+    await show(today);
+    expect(tester.widget<Semantics>(day).properties.selected, true);
+    expect(find.byKey(const ValueKey('meal-calendar-today')), findsOneWidget);
+  });
   testWidgets('4주부터 6주까지 달을 넘겨도 시트와 이동 버튼 위치가 유지된다', (tester) async {
     await tester.pumpWidget(
       CupertinoApp(

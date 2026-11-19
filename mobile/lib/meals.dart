@@ -85,14 +85,16 @@ class _MealPageState extends State<MealPage> {
     final ink = CupertinoColors.secondaryLabel.resolveFrom(context);
     return CupertinoPageScaffold(
       child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+        bottom: false,
+        child: LargeTitleScroll(
+          title: '급식 식단표',
+          padding: EdgeInsets.fromLTRB(
+            20,
+            6,
+            20,
+            90 + MediaQuery.paddingOf(context).bottom,
+          ),
           children: [
-            const Text(
-              '급식 식단표',
-              style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
             Text(widget.school['name'], style: TextStyle(color: ink)),
             const SizedBox(height: 10),
             Center(
@@ -346,6 +348,7 @@ class _MealDateSheetState extends State<MealDateSheet> {
   @override
   Widget build(BuildContext context) {
     final offset = month.weekday % 7;
+    final today = _MealPageState.today();
     final count = DateTime(month.year, month.month + 1, 0).day;
     final accent = CupertinoColors.systemIndigo.resolveFrom(context);
     return Container(
@@ -441,9 +444,15 @@ class _MealDateSheetState extends State<MealDateSheet> {
                                       month.month,
                                       n,
                                     );
-                                    final selected = date == widget.initial;
+                                    final selected =
+                                        date.year == widget.initial.year &&
+                                        date.month == widget.initial.month &&
+                                        date.day == widget.initial.day;
+                                    final isToday = date == today;
                                     return Semantics(
                                       selected: selected,
+                                      label:
+                                          '${date.year}년 ${date.month}월 ${date.day}일${isToday ? ', 오늘' : ''}',
                                       child: CupertinoButton(
                                         padding: EdgeInsets.zero,
                                         onPressed: () =>
@@ -455,17 +464,52 @@ class _MealDateSheetState extends State<MealDateSheet> {
                                           decoration: BoxDecoration(
                                             shape: BoxShape.circle,
                                             color: selected ? accent : null,
+                                            border: isToday
+                                                ? Border.all(
+                                                    color: accent,
+                                                    width: 2,
+                                                  )
+                                                : null,
                                           ),
-                                          child: Text(
-                                            '$n',
-                                            style: TextStyle(
-                                              color: selected
-                                                  ? CupertinoColors.white
-                                                  : CupertinoColors.label
-                                                        .resolveFrom(ctx),
-                                              fontWeight: selected
-                                                  ? FontWeight.bold
-                                                  : FontWeight.normal,
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Text(
+                                                  '$n',
+                                                  maxLines: 1,
+                                                  style: TextStyle(
+                                                    fontSize: 17,
+                                                    height: 1.2,
+                                                    color: selected
+                                                        ? CupertinoColors.white
+                                                        : CupertinoColors.label
+                                                              .resolveFrom(ctx),
+                                                    fontWeight:
+                                                        selected || isToday
+                                                        ? FontWeight.bold
+                                                        : FontWeight.normal,
+                                                  ),
+                                                ),
+                                                if (isToday)
+                                                  Container(
+                                                    key: const ValueKey(
+                                                      'meal-calendar-today',
+                                                    ),
+                                                    width: 4,
+                                                    height: 4,
+                                                    decoration: BoxDecoration(
+                                                      shape: BoxShape.circle,
+                                                      color: selected
+                                                          ? CupertinoColors
+                                                                .white
+                                                          : accent,
+                                                    ),
+                                                  ),
+                                              ],
                                             ),
                                           ),
                                         ),
