@@ -1,8 +1,40 @@
+import hashlib
 import json
 import re
 import sys
 
 from pycomcigan import TimeTable, get_school_code
+
+
+class SchoolTimeTable(TimeTable):
+    @staticmethod
+    def _format_teacher_name(name):
+        return name.strip() if isinstance(name, str) else ''
+
+    def _build_timetable(self, data, teacher_list, *args):
+        # The index is authoritative only within this school/year/roster.
+        # Never infer a permanent person ID from masked names or subjects.
+        scope = hashlib.sha256(json.dumps(
+            [self.school_code, self.school_year, teacher_list],
+            ensure_ascii=False).encode()).hexdigest()[:24]
+        tagged = [TeacherName(name, f'{scope}:{index}')
+                  for index, name in enumerate(teacher_list)]
+        self.teacher_registry = [teacher_fields(name) for name in tagged if name]
+        return super()._build_timetable(data, tagged, *args)
+
+
+class TeacherName(str):
+    def __new__(cls, name, identity):
+        value = super().__new__(cls, name)
+        value.identity = identity
+        return value
+
+
+def teacher_fields(name):
+    result = {'teacher': str(name)}
+    if name and getattr(name, 'identity', None):
+        result['teacherId'] = name.identity
+    return result
 
 
 def search(query):
@@ -44,15 +76,15 @@ def period_windows(entries, school):
 
 
 def lesson_data(lesson, windows):
-    data = dict(period=lesson.period, subject=lesson.subject, teacher=lesson.teacher,
+    data = dict(period=lesson.period, subject=lesson.subject, **teacher_fields(lesson.teacher),
                 changed=lesson.replaced, **windows.get(lesson.period, {}))
     if lesson.replaced and lesson.original:
-        data["original"] = dict(subject=lesson.original.subject, teacher=lesson.original.teacher)
+        data["original"] = dict(subject=lesson.original.subject, **teacher_fields(lesson.original.teacher))
     return data
 
 
 def weekly(name, code, week):
-    table = TimeTable(name, school_code=int(code), week_num=int(week))
+    table = SchoolTimeTable(name, school_code=int(code), week_num=int(week))
     windows = period_windows(table.day_time, table.school_name)
     grades = {}
     for grade, rooms in enumerate(table.timetable[1:], 1):
@@ -63,7 +95,7 @@ def weekly(name, code, week):
             ]
             for room, days in enumerate(rooms[1:], 1)
         }
-    return dict(start=table.start_date, updated=table.update_date, grades=grades)
+    return dict(start=table.start_date, updated=table.update_date, grades=grades, teachers=table.teacher_registry)
 
 
 if __name__ == "__main__":
