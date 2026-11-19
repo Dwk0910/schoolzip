@@ -318,6 +318,8 @@ private final class NativeEditors {
       switch call.method {
       case "allergies":
         page = NativeAllergies(names: args["names"] as? [String] ?? [], selected: args["selected"] as? [Int] ?? [], finish: reply)
+      case "reviewTeacherNames":
+        page = NativeTeacherReview(options: args["options"] as? [[String:String]] ?? [], title: args["title"] as? String ?? "이름 확인", finish: reply)
       case "teachers": page = NativeTeacherList(channel: self.channel, finish: reply)
       case "teacher":
         let editor = NativeTeacherEditor(entry: args as? [String: String] ?? [:])
@@ -407,8 +409,19 @@ private final class NativeTeacherList: UITableViewController {
       }
     }
   }
-  override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { entries.count }
+  override func numberOfSections(in tableView: UITableView) -> Int { 2 }
+  override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 0 ? 2 : entries.count }
+  override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+    section == 1 ? "이름 직접 수정" : nil
+  }
   override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    if indexPath.section == 0 {
+      let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+      var content = cell.defaultContentConfiguration()
+      content.text = indexPath.row == 0 ? "학교 공유 이름 불러오기" : "이전 명단 이름 연결하기"
+      content.textProperties.color = .systemBlue; cell.contentConfiguration = content
+      return cell
+    }
     let entry = entries[indexPath.row]
     let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
     var content = cell.defaultContentConfiguration(); content.text = (entry["current"] ?? "") + " 선생님"; content.secondaryText = entry["subject"]
@@ -417,6 +430,16 @@ private final class NativeTeacherList: UITableViewController {
   }
   override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     tableView.deselectRow(at: indexPath, animated: true)
+    if indexPath.section == 0 {
+      channel.invokeMethod(indexPath.row == 0 ? "reviewShared" : "reviewPrevious", arguments: nil) { [weak self] result in
+        if let error = result as? FlutterError {
+          let alert = UIAlertController(title: "불러오지 못했어요", message: error.message, preferredStyle: .alert)
+          alert.addAction(UIAlertAction(title: "확인", style: .default)); self?.present(alert, animated: true)
+        }
+        self?.load()
+      }
+      return
+    }
     let editor = NativeTeacherEditor(entry: entries[indexPath.row])
     editor.saveValue = { [weak self] value, completion in
       guard let self = self else { completion("화면이 닫혔습니다"); return }
@@ -476,7 +499,7 @@ private final class NativeTeacherEditor: UITableViewController, UITextFieldDeleg
   override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
     section == 0 ? "\(entry["subject"] ?? "") · 컴시간 표시명 \(entry["original"] ?? "")" : nil
   }
-  override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? { section == 0 ? "현재 교사 명단에서 같은 선생님의 모든 과목에 적용돼요." : nil }
+  override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? { section == 0 ? "같은 선생님의 모든 과목에 적용되며, 학교 공유 이름 후보로 자동 저장돼요." : nil }
   override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
     let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
     if indexPath.section == 0 {
@@ -492,5 +515,77 @@ private final class NativeTeacherEditor: UITableViewController, UITextFieldDeleg
   override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     tableView.deselectRow(at: indexPath, animated: true)
     if indexPath.section == 1 { commit("") }
+  }
+}
+private final class NativeTeacherReview: UITableViewController, UISearchResultsUpdating {
+  let options: [[String:String]]
+  let finish: FlutterResult
+  var selected = Set<Int>()
+  var visible: [Int] = []
+  lazy var bulk: Set<Int> = {
+    let keys = Dictionary(grouping: options.indices, by: { options[$0]["key"] ?? "" })
+    let sources = Dictionary(grouping: options.indices, by: { options[$0]["source"] ?? "" })
+    return Set(options.indices.filter { keys[options[$0]["key"] ?? ""]?.count == 1 && sources[options[$0]["source"] ?? ""]?.count == 1 })
+  }()
+  var bulkSelected: Bool { !selected.isEmpty && bulk.isSubset(of: selected) }
+  let search = UISearchController(searchResultsController: nil)
+  init(options: [[String:String]], title: String, finish: @escaping FlutterResult) {
+    self.options = options; self.finish = finish
+    super.init(style: .insetGrouped); self.title = title; visible = Array(options.indices)
+  }
+  required init?(coder: NSCoder) { fatalError() }
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    search.searchResultsUpdater = self; search.obscuresBackgroundDuringPresentation = false
+    search.searchBar.placeholder = "이름 또는 과목 검색"; navigationItem.searchController = search
+    navigationItem.hidesSearchBarWhenScrolling = false
+    navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancel))
+    navigationItem.rightBarButtonItem = UIBarButtonItem(title: "선택 적용", style: .done, target: self, action: #selector(apply))
+    navigationItem.rightBarButtonItem?.isEnabled = false
+  }
+  @objc func cancel() { dismiss(animated: true) { self.finish(nil) } }
+  @objc func apply() {
+    let values = selected.sorted().map { options[$0] }
+    dismiss(animated: true) { self.finish(values) }
+  }
+  func updateSearchResults(for searchController: UISearchController) {
+    let query = searchController.searchBar.text ?? ""
+    visible = options.indices.filter { query.isEmpty || (options[$0]["title"]! + options[$0]["detail"]!).localizedCaseInsensitiveContains(query) }
+    tableView.reloadData()
+  }
+  override func numberOfSections(in tableView: UITableView) -> Int { 2 }
+  override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+    if section == 0 { return nil }
+    return options.isEmpty ? "적용할 후보가 없습니다." : "이름과 과목을 확인해 선택해 주세요. 기존 이름은 덮어쓰지 않아요. 중복 후보는 전체 선택에서 제외되니 직접 골라 주세요."
+  }
+  override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 0 ? 1 : visible.count }
+  override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    if indexPath.section == 0 {
+      let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+      var content = cell.defaultContentConfiguration(); content.text = bulkSelected ? "전체 해제" : "전체 선택"
+      content.textProperties.color = bulk.isEmpty && selected.isEmpty ? .tertiaryLabel : .systemBlue
+      cell.contentConfiguration = content; return cell
+    }
+    let index = visible[indexPath.row]; let entry = options[index]
+    let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+    var content = cell.defaultContentConfiguration(); content.text = entry["title"]; content.secondaryText = entry["detail"]
+    content.textProperties.numberOfLines = 0; content.secondaryTextProperties.numberOfLines = 0
+    cell.contentConfiguration = content; cell.accessoryType = selected.contains(index) ? .checkmark : .none
+    return cell
+  }
+  override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    if indexPath.section == 0 {
+      if bulkSelected { selected.removeAll() } else { selected.formUnion(bulk) }
+      navigationItem.rightBarButtonItem?.isEnabled = !selected.isEmpty
+      tableView.reloadData(); return
+    }
+    let index = visible[indexPath.row]
+    if selected.contains(index) { selected.remove(index) }
+    else {
+      selected = selected.filter { options[$0]["key"] != options[index]["key"] && options[$0]["source"] != options[index]["source"] }
+      selected.insert(index)
+    }
+    navigationItem.rightBarButtonItem?.isEnabled = !selected.isEmpty
+    tableView.reloadData()
   }
 }

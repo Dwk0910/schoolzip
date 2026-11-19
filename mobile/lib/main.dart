@@ -13,6 +13,8 @@ import 'meals.dart';
 import 'allergies.dart';
 import 'settings_page.dart';
 import 'teacher_names.dart';
+import 'teacher_sharing.dart';
+import 'teacher_review.dart';
 import 'intro_guide.dart';
 
 import 'controls.dart';
@@ -1077,6 +1079,110 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
   DateTime? timetableMonday;
 
   late final nameStore = SchoolTeacherNames(widget.school['code'].toString());
+  late final sharing = TeacherSharing(
+    nameStore.code,
+    widget.school['name'] as String,
+  );
+  List<Map<String, String>> currentTeacherRoster = [];
+  bool offeringNames = false;
+  Future<void> uploadQueue = Future<void>.value();
+  Future<void> publishTeacherNames() {
+    uploadQueue = uploadQueue.then((_) => uploadTeacherNames());
+    return uploadQueue;
+  }
+
+  Future<void> uploadTeacherNames() async {
+    if (!Platform.isIOS && !Platform.isAndroid) return;
+    try {
+      await sharing.publish(currentTeacherRoster, await nameStore.read());
+    } catch (error) {
+      debugPrint('Teacher sharing pending: $error');
+    }
+  }
+
+  Future<void> reviewNames(
+    bool shared, [
+    List<Map<String, String>>? supplied,
+  ]) async {
+    final options =
+        supplied ??
+        (shared
+            ? await sharing.shared(currentTeacherRoster, teacherNames)
+            : await sharing.previous(currentTeacherRoster, teacherNames));
+    if (!mounted) return;
+    final title = shared ? '학교 공유 이름 확인' : '이전 이름 연결';
+    final List<Map<String, String>>? selected;
+    if (Platform.isIOS) {
+      final result = await const MethodChannel('schoolzip/editors')
+          .invokeMethod<List<dynamic>>('reviewTeacherNames', {
+            'title': title,
+            'options': options,
+          });
+      selected = result
+          ?.map((e) => Map<String, String>.from(e as Map))
+          .toList();
+    } else {
+      selected = await Navigator.push<List<Map<String, String>>>(
+        context,
+        CupertinoPageRoute(
+          builder: (_) => TeacherReviewPage(title: title, options: options),
+        ),
+      );
+    }
+    if (selected == null || selected.isEmpty) return;
+    final updated = await sharing.apply(selected, nameStore, shared: shared);
+    if (mounted) setState(() => teacherNames = updated);
+    await syncTeacherNames(nameStore.code, updated);
+    unawaited(publishTeacherNames());
+  }
+
+  Future<void> offerSharedNames() async {
+    if ((!Platform.isIOS && !Platform.isAndroid) ||
+        offeringNames ||
+        !mounted ||
+        widget.preferred == null ||
+        widget.onGuideFinished != null) {
+      return;
+    }
+    offeringNames = true;
+    try {
+      final prefs = SharedPreferencesAsync();
+      if (await prefs.getBool('teacherSharedOffer.${nameStore.code}') == true) {
+        return;
+      }
+      final options = await sharing.shared(currentTeacherRoster, teacherNames);
+      if (!mounted ||
+          options.isEmpty ||
+          ModalRoute.isCurrentOf(context) != true) {
+        return;
+      }
+      await prefs.setBool('teacherSharedOffer.${nameStore.code}', true);
+      if (!mounted) return;
+      final accept = await showCupertinoDialog<bool>(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('공유된 선생님 이름이 있어요'),
+          content: const Text('다른 사용자가 입력한 이름이에요. 내용을 확인한 뒤 선택해서 적용할 수 있어요.'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('나중에'),
+            ),
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('확인하기'),
+            ),
+          ],
+        ),
+      );
+      if (accept == true) await reviewNames(true, options);
+    } catch (error) {
+      debugPrint('Shared names unavailable: $error');
+    } finally {
+      offeringNames = false;
+    }
+  }
+
   TeacherNames teacherNames = {};
 
   Future<void> loadTeacherNames() async {
@@ -1115,6 +1221,10 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
     if (Platform.isIOS) {
       const channel = MethodChannel('schoolzip/editors');
       channel.setMethodCallHandler((call) async {
+        if (call.method == 'reviewShared' || call.method == 'reviewPrevious') {
+          await reviewNames(call.method == 'reviewShared');
+          return null;
+        }
         if (call.method == 'loadTeachers') {
           dynamic table;
           try {
@@ -1141,6 +1251,7 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
           );
           if (mounted) setState(() => teacherNames = updated);
           await syncTeacherNames(nameStore.code, updated);
+          unawaited(publishTeacherNames());
           return null;
         }
         throw MissingPluginException();
@@ -1183,7 +1294,42 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
                       table['grades'] as Map<String, dynamic>,
                     );
                     Widget settingRow(int i) {
-                      final entry = sorted[i];
+                      if (i < 2) {
+                        return CupertinoButton(
+                          alignment: Alignment.centerLeft,
+                          onPressed: () async {
+                            try {
+                              await reviewNames(i == 0);
+                              if (ctx.mounted) refresh(() {});
+                            } catch (_) {
+                              if (ctx.mounted) {
+                                await showCupertinoDialog<void>(
+                                  context: ctx,
+                                  builder: (dialog) => CupertinoAlertDialog(
+                                    title: const Text('불러오지 못했어요'),
+                                    content: const Text(
+                                      '서버 연결을 확인하고 다시 시도해 주세요.',
+                                    ),
+                                    actions: [
+                                      CupertinoDialogAction(
+                                        onPressed: () => Navigator.pop(dialog),
+                                        child: const Text('확인'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          child: Text(
+                            i == 0 ? '학교 공유 이름 불러오기' : '이전 명단 이름 연결하기',
+                            style: const TextStyle(
+                              color: CupertinoColors.systemBlue,
+                            ),
+                          ),
+                        );
+                      }
+                      final entry = sorted[i - 2];
                       final lesson = {
                         'subject': entry['subject'],
                         'teacher': entry['original'],
@@ -1203,12 +1349,15 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
 
                     return ListView(
                       children: [
+                        CupertinoListSection.insetGrouped(
+                          children: [settingRow(0), settingRow(1)],
+                        ),
                         if (sorted.isNotEmpty)
                           CupertinoListSection.insetGrouped(
                             header: const Text('이름 직접 수정'),
                             children: [
                               for (var i = 0; i < sorted.length; i++)
-                                settingRow(i),
+                                settingRow(i + 2),
                             ],
                           ),
                       ],
@@ -1239,6 +1388,7 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
         );
         if (mounted) setState(() => teacherNames = updated);
         await syncTeacherNames(nameStore.code, updated);
+        unawaited(publishTeacherNames());
       });
       try {
         await channel.invokeMethod<void>('teacher', {
@@ -1261,6 +1411,7 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
           final updated = await nameStore.save(storageKey, original, value);
           if (mounted) setState(() => teacherNames = updated);
           unawaited(syncTeacherNames(nameStore.code, updated));
+          unawaited(publishTeacherNames());
         },
       ),
     );
@@ -1331,6 +1482,18 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
       if (mounted) {
         teacherNames = migrated;
         unawaited(syncTeacherNames(nameStore.code, migrated));
+      }
+    }
+    if (mounted && week == requestedWeek) {
+      currentTeacherRoster = teacherSettingsEntries(
+        table['grades'] as Map<String, dynamic>,
+      );
+      if (Platform.isIOS || Platform.isAndroid) {
+        await sharing.remember(currentTeacherRoster);
+        unawaited(publishTeacherNames());
+        unawaited(
+          Future<void>.delayed(const Duration(seconds: 1), offerSharedNames),
+        );
       }
     }
     if (mounted && week == requestedWeek) {

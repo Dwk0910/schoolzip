@@ -85,6 +85,14 @@ class SchoolTeacherNames {
     String input,
   ) async {
     final names = await read();
+    final imported = jsonDecode(
+      await SharedPreferencesAsync().getString('teacherImported.$code') ?? '{}',
+    ) as Map;
+    imported.remove(subject);
+    await SharedPreferencesAsync().setString(
+      'teacherImported.$code',
+      jsonEncode(imported),
+    );
     final value = input.trim();
     if (value.isEmpty ||
         value == original ||
@@ -213,7 +221,7 @@ class _TeacherNameEditorState extends State<TeacherNameEditor> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '현재 교사 명단에서 같은 선생님의 모든 과목에 적용돼요.',
+                  '같은 선생님의 모든 과목에 적용되며, 학교 공유 이름 후보로 자동 저장돼요.',
                   style: TextStyle(color: secondary, fontSize: 13),
                 ),
                 if (error != null)
