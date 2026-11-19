@@ -20,21 +20,16 @@ class HomeTabsLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (Platform.isIOS) {
-      return Column(
+      return Stack(
+        fit: StackFit.expand,
         children: [
-          Expanded(
-            child: MediaQuery.removePadding(
-              context: context,
-              removeBottom: true,
-              child: child,
-            ),
-          ),
-          SafeArea(
-            top: false,
-            child: SizedBox(
-              height: 62,
-              child: _NativeTabs(index: index, onChanged: onChanged),
-            ),
+          child,
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 70 + MediaQuery.paddingOf(context).bottom,
+            child: _NativeTabs(index: index, onChanged: onChanged),
           ),
         ],
       );
@@ -234,7 +229,11 @@ class _TabBodyState extends State<TabBody> with SingleTickerProviderStateMixin {
       if (MediaQuery.disableAnimationsOf(context)) {
         motion.value = widget.index.toDouble();
       } else {
-        motion.animateTo(widget.index.toDouble(), curve: Curves.easeOutCubic);
+        motion.animateTo(
+          widget.index.toDouble(),
+          duration: const Duration(milliseconds: 360),
+          curve: Curves.easeInOutCubic,
+        );
       }
     }
   }

@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+
 import 'dart:io';
 
 import 'package:cupertino_ui/cupertino_ui.dart';
@@ -59,6 +62,9 @@ class _SettingsPageState extends State<SettingsPage> {
     if (Platform.isIOS) {
       return UiKitView(
         viewType: 'schoolzip/settings',
+        gestureRecognizers: {
+          Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+        },
         creationParams: selection,
         creationParamsCodec: const StandardMessageCodec(),
         onPlatformViewCreated: (id) {

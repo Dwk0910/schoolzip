@@ -1,3 +1,9 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+
+import 'dart:io';
+
+import 'package:flutter/services.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 
 const sheetActionRadius = 16.0;
@@ -70,9 +76,18 @@ class _PressButtonState extends State<PressButton> {
 class WeekControl extends StatelessWidget {
   final int value;
   final ValueChanged<int> onChanged;
-  const WeekControl({super.key, required this.value, required this.onChanged});
+  final bool native;
+  const WeekControl({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.native = true,
+  });
   @override
   Widget build(BuildContext context) {
+    if (native && Platform.isIOS) {
+      return _NativeWeekControl(value: value, onChanged: onChanged);
+    }
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : const Duration(milliseconds: 240);
@@ -603,4 +618,93 @@ class LessonChangeRows extends StatelessWidget {
 
     return Column(children: [detail('변경 전', original), detail('변경 후', lesson)]);
   }
+}
+
+class _NativeWeekControl extends StatefulWidget {
+  final int value;
+  final ValueChanged<int> onChanged;
+  const _NativeWeekControl({required this.value, required this.onChanged});
+  @override
+  State<_NativeWeekControl> createState() => _NativeWeekControlState();
+}
+
+class _NativeWeekControlState extends State<_NativeWeekControl> {
+  MethodChannel? channel;
+  @override
+  void didUpdateWidget(_NativeWeekControl oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value != oldWidget.value) {
+      channel?.invokeMethod<void>('select', widget.value);
+    }
+  }
+
+  @override
+  void dispose() {
+    channel?.setMethodCallHandler(null);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 44,
+    child: UiKitView(
+      viewType: 'schoolzip/week',
+      gestureRecognizers: {
+        Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+      },
+      creationParams: widget.value,
+      creationParamsCodec: const StandardMessageCodec(),
+      onPlatformViewCreated: (id) {
+        if (!mounted) return;
+        final bridge = MethodChannel('schoolzip/week/$id');
+        channel = bridge;
+        bridge.setMethodCallHandler((call) async {
+          if (mounted && call.method == 'change') {
+            widget.onChanged(call.arguments as int);
+          }
+        });
+        bridge.invokeMethod<void>('select', widget.value);
+      },
+    ),
+  );
+}
+
+class LargeTitleScroll extends StatelessWidget {
+  final String title;
+  final Widget? trailing;
+  final EdgeInsets padding;
+  final List<Widget> children;
+  const LargeTitleScroll({
+    super.key,
+    required this.title,
+    this.trailing,
+    required this.padding,
+    required this.children,
+  });
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: EdgeInsets.fromLTRB(
+      padding.left,
+      20,
+      padding.right,
+      padding.bottom,
+    ),
+    children: [
+      Stack(
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 34,
+              fontWeight: FontWeight.bold,
+              letterSpacing: .37,
+            ),
+          ),
+          if (trailing != null) Positioned(right: 0, top: 0, child: trailing!),
+        ],
+      ),
+      const SizedBox(height: 6),
+      ...children,
+    ],
+  );
 }

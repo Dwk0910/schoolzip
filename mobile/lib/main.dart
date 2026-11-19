@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'dart:async';
@@ -174,20 +175,30 @@ class _SchoolHomeState extends State<SchoolHome> {
   late Map<String, dynamic>? school = widget.saved, preferred = widget.saved;
   late Set<int> allergies = widget.allergies;
   Future<void> editAllergies() async {
-    final result = await Navigator.push<Set<int>>(
-      context,
-      CupertinoPageRoute(builder: (_) => AllergyPicker(selected: allergies)),
-    );
+    final Set<int>? result;
+    if (Platform.isIOS) {
+      final values = await const MethodChannel('schoolzip/editors')
+          .invokeListMethod<int>('allergies', {
+            'selected': allergies.toList(),
+            'names': allergenNames,
+          });
+      result = values?.toSet();
+    } else {
+      result = await Navigator.push<Set<int>>(
+        context,
+        CupertinoPageRoute(builder: (_) => AllergyPicker(selected: allergies)),
+      );
+    }
     if (result == null || !mounted) return;
     await SharedPreferencesAsync().setStringList('allergies', [
       for (final code in result) code.toString(),
     ]);
-    if (mounted) setState(() => allergies = result);
+    if (mounted) setState(() => allergies = result!);
   }
 
   late bool teachers = widget.teachers, highlight = widget.highlight;
+  Future<void> displayWrites = Future<void>.value();
   Future<void> changeDisplay(String key, bool value) async {
-    await SharedPreferencesAsync().setBool(key, value);
     if (mounted) {
       setState(() {
         if (key == 'showTeachers') {
@@ -197,6 +208,13 @@ class _SchoolHomeState extends State<SchoolHome> {
         }
       });
     }
+    // Persist in touch order without delaying or resetting the native animation.
+    displayWrites = displayWrites
+        .then((_) => SharedPreferencesAsync().setBool(key, value))
+        .catchError((Object error) {
+          debugPrint('Display preference save failed: $error');
+        });
+    await displayWrites;
   }
 
   late bool showGuide = widget.showGuide;
