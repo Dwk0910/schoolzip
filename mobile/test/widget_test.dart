@@ -10,6 +10,7 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:schoolzip/main.dart';
 import 'package:schoolzip/intro_guide.dart';
+import 'package:schoolzip/controls.dart';
 
 void main() {
   testWidgets('새로 설치하면 도움말보다 먼저 학교 설정이 열린다', (tester) async {
@@ -127,6 +128,60 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('스쿨집고등학교'), findsOneWidget);
     expect(find.byType(ErrorResult), findsNothing);
+  });
+
+  testWidgets('오늘 배지가 있는 주와 없는 주에서 표 위치가 유지된다', (tester) async {
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
+    final korea = DateTime.now().toUtc().add(const Duration(hours: 9));
+    final today = DateTime.utc(korea.year, korea.month, korea.day);
+    final monday = today.subtract(Duration(days: today.weekday - 1));
+    Map<String, dynamic> table(int week) => {
+      'start': monday
+          .add(Duration(days: week * 7))
+          .toIso8601String()
+          .substring(0, 10),
+      'grades': {
+        '2': {
+          '3': List.generate(
+            7,
+            (_) => [
+              {'period': 1, 'subject': '국어', 'teacher': '이혜'},
+            ],
+          ),
+        },
+      },
+    };
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: WeeklyPage(
+          school: const {'name': '검증학교', 'code': 12},
+          preferred: null,
+          changeSchool: () {},
+          remember: (_, _, _) async {},
+          initialWeek: Future.value(table(0)),
+          fetch: (_, args) async => table(int.parse(args['week'] ?? '0')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('오늘'), findsOneWidget);
+    final first = tester.getTopLeft(find.byType(Table));
+    final badgeHeight = tester
+        .getSize(find.byKey(const ValueKey('today-badge-space')))
+        .height;
+    await tester.tap(find.text('다음 주'));
+    await tester.pumpAndSettle();
+    expect(find.text('오늘'), findsNothing);
+    expect(tester.getTopLeft(find.byType(Table)), first);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('today-badge-space'))).height,
+      badgeHeight,
+    );
+    await tester.tap(find.text('이번 주'));
+    await tester.pumpAndSettle();
+    expect(find.text('오늘'), findsOneWidget);
+    expect(tester.getTopLeft(find.byType(Table)), first);
   });
 
   testWidgets('주차 전환 양방향에서 헤더 아래 로더와 선택한 반만 유지한다', (tester) async {
@@ -361,7 +416,21 @@ void main() {
         );
       }
       if (i == 4) expect(find.text('누리 선생님'), findsOneWidget);
-      if (i == 3) expect(find.text('등록된 수업 없음'), findsNothing);
+      if (i == 3) {
+        expect(find.text('등록된 수업 없음'), findsNothing);
+        expect(
+          find.byKey(const ValueKey('guide-title-2')).hitTestable(),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('guide-body-2')).hitTestable(),
+          findsOneWidget,
+        );
+        final control = tester.widget<WeekControl>(
+          find.descendant(of: preview, matching: find.byType(WeekControl)),
+        );
+        expect(control.native, isFalse);
+      }
       await tester.tap(find.text('다음'));
       await tester.pumpAndSettle();
     }
@@ -384,7 +453,7 @@ void main() {
     expect(find.text('테스트'), findsOneWidget);
     expect(find.text('대체'), findsOneWidget);
     expect(find.byType(Table), findsOneWidget);
-    expect(find.bySemanticsLabel('월요일 4교시 음악 대체 테스트 선생님'), findsOneWidget);
+    expect(find.bySemanticsLabel('월요일 4교시 음악 대체 테스트'), findsOneWidget);
     expect(find.bySemanticsLabel('금요일 4교시 빈 교시'), findsOneWidget);
     await tester.tap(find.text('1학년 7반').first);
     await tester.pumpAndSettle();
@@ -401,7 +470,13 @@ void main() {
     expect(find.text('공수2'), findsOneWidget);
     expect(find.text('김가 선생님'), findsOneWidget);
     expect(find.text('변경 후'), findsOneWidget);
-    expect(find.text('테스트 선생님'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('lesson-change-sheet')),
+        matching: find.text('테스트 선생님'),
+      ),
+      findsOneWidget,
+    );
     await tester.tap(find.text('닫기'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('대체'));

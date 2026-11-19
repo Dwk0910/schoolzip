@@ -1,6 +1,7 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
 
 import 'controls.dart';
+import 'timetable_views.dart';
 
 // Only fictional display data belongs in onboarding previews.
 class GuideExample {
@@ -60,7 +61,10 @@ class _IntroGuideState extends State<IntroGuide> {
       title: '우리 반 시간표가 준비됐어요',
       body: '요일과 교시가 만나는 칸에서 과목과 담당 교사를 확인하세요. 설정에서 선생님 이름을 바꿀 수 있어요.',
     ),
-    (title: '다른 반도 살펴볼 수 있어요', body: '시간표 위의 학년·반 버튼을 눌러 반을 바꿀 수 있어요.'),
+    (
+      title: '다른 반도 살펴볼 수 있어요',
+      body: '왼쪽에서 보기 모드를 고르세요. 오른쪽에서는 모드에 맞게 학년·반, 학년·날짜 또는 선생님을 선택해요.',
+    ),
     (title: '다음 주가 궁금할 때', body: '시간표 위에서 ‘다음 주’를 누르세요. ‘이번 주’를 누르면 다시 돌아와요.'),
     (title: '바뀐 수업은 ‘대체’를 눌러요', body: '대체 수업 칸을 누르면 변경 전후의 과목과 선생님이 함께 보여요.'),
     (
@@ -134,13 +138,20 @@ class _IntroGuideState extends State<IntroGuide> {
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 24),
             ),
             const SizedBox(height: 10),
-            widget.classButton,
+            Row(
+              children: [
+                const Expanded(child: ViewDropdown(label: '요일별 보기')),
+                const SizedBox(width: 8),
+                Expanded(child: widget.classButton),
+              ],
+            ),
           ],
         );
       case 2:
         return Column(
           children: [
-            WeekControl(value: 0, onChanged: (_) {}),
+            // A moving onboarding preview must not embed a native platform view.
+            WeekControl(native: false, value: 0, onChanged: (_) {}),
             const SizedBox(height: 10),
             widget.weekHeader,
           ],
@@ -269,7 +280,7 @@ class _IntroGuideState extends State<IntroGuide> {
                       ),
                     ),
                     Text(
-                      '$number / 5',
+                      '$number / ${slides.length}',
                       style: TextStyle(color: secondary, fontSize: 14),
                     ),
                     CupertinoButton(
@@ -338,7 +349,11 @@ class _IntroGuideState extends State<IntroGuide> {
                             const SizedBox(height: 18),
                             Text(
                               slides[index].title,
-                              style: const TextStyle(
+                              key: ValueKey('guide-title-$index'),
+                              style: TextStyle(
+                                color: CupertinoColors.label.resolveFrom(
+                                  context,
+                                ),
                                 fontSize: 23,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: -.7,
@@ -347,6 +362,7 @@ class _IntroGuideState extends State<IntroGuide> {
                             const SizedBox(height: 6),
                             Text(
                               slides[index].body,
+                              key: ValueKey('guide-body-$index'),
                               style: TextStyle(
                                 color: secondary,
                                 fontSize: 15,
@@ -380,7 +396,9 @@ class _IntroGuideState extends State<IntroGuide> {
                       : () => move(page + 1),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   child: Text(
-                    page == slides.length - 1 ? '시작하기!' : '다음',
+                    page == slides.length - 1
+                        ? '시작하기!'
+                        : '다음',
                     style: const TextStyle(
                       color: CupertinoColors.white,
                       fontWeight: FontWeight.w600,
