@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:schoolzip/main.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +14,47 @@ void main() {
     () => SharedPreferencesAsyncPlatform.instance =
         InMemorySharedPreferencesAsync.empty(),
   );
+  testWidgets('시작 설정은 응답 전 로딩 화면을 띄우고 실패 시 같은 창에서 재시도한다', (tester) async {
+    final response = Completer<StartupTimetableData>();
+    var attempts = 0;
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: StartupTimetableLoader(
+          load: () {
+            if (++attempts == 1) {
+              return response.future;
+            }
+            return Future.value((
+              saved: const StartupTimetable(),
+              choices: <TeacherChoice>[],
+            ));
+          },
+        ),
+      ),
+    );
+    expect(find.text('앱 시작 시 시간표'), findsOneWidget);
+    expect(find.byType(CupertinoActivityIndicator), findsOneWidget);
+    response.completeError(StateError('offline'));
+    await tester.pumpAndSettle();
+    expect(find.text('시간표 설정을 불러오지 못했어요.'), findsOneWidget);
+    await tester.tap(find.text('다시 시도'));
+    await tester.pumpAndSettle();
+    expect(find.byType(StartupTimetablePage), findsOneWidget);
+    expect(attempts, 2);
+  });
+  testWidgets('시작 설정 로딩 중 닫아도 뒤늦은 응답은 화면을 바꾸지 않는다', (tester) async {
+    final response = Completer<StartupTimetableData>();
+    await tester.pumpWidget(
+      CupertinoApp(home: StartupTimetableLoader(load: () => response.future)),
+    );
+    await tester.pumpWidget(const SizedBox());
+    response.complete((
+      saved: const StartupTimetable(),
+      choices: <TeacherChoice>[],
+    ));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('재실행하면 지정한 선생님으로 열고 일시적 모드 변경은 저장하지 않는다', (tester) async {
     await const StartupTimetable(
       mode: TimetableMode.teachers,

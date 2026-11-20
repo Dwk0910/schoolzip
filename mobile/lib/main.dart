@@ -1082,41 +1082,64 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
   }
 
   Future<void> editStartup() async {
-    final code = widget.school['code'].toString();
-    final saved = await StartupTimetable.read(code);
-    dynamic table;
-    try {
-      table = await data;
-    } catch (_) {
-      table = offlineWeek;
-    }
     if (!mounted) return;
-    final choices = teacherChoices(
-      table?['grades'] as Map<String, dynamic>? ?? {},
-      displayTeacher,
-    );
+    final code = widget.school['code'].toString();
+    var attempts = 0;
+    Future<StartupTimetableData> loadOptions() async {
+      final saved = await StartupTimetable.read(code);
+      dynamic table;
+      try {
+        if (attempts++ > 0) data = _forNextBuild(load());
+        table = await data;
+      } catch (_) {
+        table = offlineWeek;
+      }
+      if (table == null) throw StateError('시간표를 불러오지 못했어요.');
+      return (
+        saved: saved,
+        choices: teacherChoices(
+          table['grades'] as Map<String, dynamic>,
+          displayTeacher,
+        ),
+      );
+    }
+
     final StartupTimetable? selected;
     if (Platform.isIOS) {
-      final result = await const MethodChannel('schoolzip/editors')
-          .invokeMapMethod<String, dynamic>('startupTimetable', {
-            'mode': saved.mode.name,
-            'teacher': saved.teacher,
-            'label': saved.label,
-            'teachers': [
-              for (final choice in choices)
-                {
-                  'id': choice.id,
-                  'label': choice.label,
-                  'subjects': choice.subjects,
-                },
-            ],
-          });
-      selected = result == null ? null : StartupTimetable.fromJson(result);
+      final loader = MethodChannel(
+        'schoolzip/startup/${DateTime.now().microsecondsSinceEpoch}',
+      );
+      loader.setMethodCallHandler((call) async {
+        if (call.method != 'load') throw MissingPluginException();
+        final options = await loadOptions();
+        return {
+          'mode': options.saved.mode.name,
+          'teacher': options.saved.teacher,
+          'label': options.saved.label,
+          'teachers': [
+            for (final choice in options.choices)
+              {
+                'id': choice.id,
+                'label': choice.label,
+                'subjects': choice.subjects,
+              },
+          ],
+        };
+      });
+      try {
+        final result = await const MethodChannel('schoolzip/editors')
+            .invokeMapMethod<String, dynamic>('startupTimetable', {
+              'loader': loader.name,
+            });
+        selected = result == null ? null : StartupTimetable.fromJson(result);
+      } finally {
+        loader.setMethodCallHandler(null);
+      }
     } else {
       selected = await Navigator.push<StartupTimetable>(
         context,
         CupertinoPageRoute(
-          builder: (_) => StartupTimetablePage(saved: saved, choices: choices),
+          builder: (_) => StartupTimetableLoader(load: loadOptions),
         ),
       );
     }
@@ -1289,6 +1312,7 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
   Future<void> openTeachers() async {
     if (Platform.isIOS) {
       const channel = MethodChannel('schoolzip/editors');
+      var retryTeachers = false;
       channel.setMethodCallHandler((call) async {
         if (call.method == 'reviewShared' || call.method == 'reviewPrevious') {
           await reviewNames(call.method == 'reviewShared');
@@ -1297,10 +1321,12 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
         if (call.method == 'loadTeachers') {
           dynamic table;
           try {
+            if (retryTeachers) data = _forNextBuild(load());
             table = await data;
           } catch (_) {
             table = offlineWeek;
           }
+          retryTeachers = table == null;
           if (table == null) {
             throw PlatformException(
               code: 'load',

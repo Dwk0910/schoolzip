@@ -7,6 +7,10 @@ final class ScrollTests: XCTestCase {
     app.coordinate(withNormalizedOffset: CGVector(dx: 0.71, dy: 0.94)).tap()
     let row = app.cells.containing(.staticText, identifier: "앱 시작 시 시간표").firstMatch
     XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
+    XCTAssertTrue(app.staticTexts["시간표 설정을 불러오는 중이에요."].waitForExistence(timeout: 2))
+    XCTAssertFalse(app.buttons["저장"].firstMatch.isEnabled)
+    XCTAssertTrue(app.staticTexts["시간표 설정을 불러오지 못했어요."].waitForExistence(timeout: 5))
+    app.buttons["다시 시도"].tap()
     let teacherMode = app.staticTexts["선생님별 보기"].firstMatch
     XCTAssertTrue(teacherMode.waitForExistence(timeout: 5))
     app.staticTexts["요일별 보기"].firstMatch.tap()
@@ -35,8 +39,10 @@ final class ScrollTests: XCTestCase {
     XCTAssertTrue(row.staticTexts["선생님별 보기"].waitForExistence(timeout: 5))
     let summary = XCTAttachment(screenshot: app.screenshot()); summary.name = "startup-settings-summary"; summary.lifetime = .keepAlways; add(summary)
     row.tap()
-    XCTAssertTrue(app.staticTexts["이가람 선생님"].firstMatch.waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["저장"].firstMatch.isEnabled)
+    XCTAssertTrue(app.staticTexts["시간표 설정을 불러오는 중이에요."].waitForExistence(timeout: 2))
+    app.navigationBars["앱 시작 시 시간표"].buttons.element(boundBy: 0).tap()
+    XCTAssertTrue(row.waitForExistence(timeout: 5))
+    XCTAssertTrue(row.staticTexts["선생님별 보기"].exists)
   }
   func testNativeScrollAndTabs() throws {
     let app = XCUIApplication(bundleIdentifier: "app.schoolzip.schoolzip")

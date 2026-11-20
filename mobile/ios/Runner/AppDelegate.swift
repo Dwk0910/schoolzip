@@ -242,7 +242,7 @@ private final class NativeEditors {
       case "allergies":
         page = NativeAllergies(names: args["names"] as? [String] ?? [], selected: args["selected"] as? [Int] ?? [], finish: reply)
       case "startupTimetable":
-        page = NativeStartupTimetable(args: args, finish: reply)
+        page = NativeStartupTimetable(args: args, loader: (args["loader"] as? String).map { FlutterMethodChannel(name: $0, binaryMessenger: messenger) }, finish: reply)
       case "reviewTeacherNames":
         page = NativeTeacherReview(options: args["options"] as? [[String:String]] ?? [], title: args["title"] as? String ?? "이름 확인", loader: (args["loader"] as? String).map { FlutterMethodChannel(name: $0, binaryMessenger: messenger) }, finish: reply)
       case "teachers": page = NativeTeacherList(channel: self.channel, finish: reply)
@@ -931,7 +931,12 @@ private final class HorizontalTimetableScroll: UIScrollView {
 
 private final class NativeStartupTimetable: UITableViewController, UITextFieldDelegate {
   let finish: FlutterResult
-  let teachers: [[String: String]]
+  var teachers: [[String: String]]
+  let loader: FlutterMethodChannel?
+  var loading: Bool
+  var loadFailed = false
+  var started = false
+  var closed = false
   let modes = ["mine", "classes", "teachers"]
   let labels = ["요일별 보기", "학급별 보기", "선생님별 보기"]
   var mode: String
@@ -951,7 +956,8 @@ private final class NativeStartupTimetable: UITableViewController, UITextFieldDe
     ])
     return header
   }()
-  init(args: [String: Any], finish: @escaping FlutterResult) {
+  init(args: [String: Any], loader: FlutterMethodChannel?, finish: @escaping FlutterResult) {
+    self.loader = loader; loading = loader != nil
     self.finish = finish; teachers = args["teachers"] as? [[String: String]] ?? []
     mode = args["mode"] as? String ?? "mine"; teacher = args["teacher"] as? String; teacherLabel = args["label"] as? String
     super.init(style: .insetGrouped); title = "앱 시작 시 시간표"; visible = teachers
@@ -969,10 +975,41 @@ private final class NativeStartupTimetable: UITableViewController, UITextFieldDe
     search.adjustsFontForContentSizeCategory = true
     search.returnKeyType = .done
     search.addTarget(self, action: #selector(searchChanged), for: .editingChanged)
-    updateSaveButton()
+    updateLoading()
+  }
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    if !started && loader != nil { started = true; loadOptions() }
+  }
+  @objc private func loadOptions() {
+    guard let loader = loader, !closed else { return }
+    loading = true; loadFailed = false; updateLoading()
+    loader.invokeMethod("load", arguments: nil) { [weak self] result in
+      guard let self = self, !self.closed else { return }
+      self.loading = false
+      if let values = result as? [String: Any], let teachers = values["teachers"] as? [[String: String]] {
+        self.teachers = teachers; self.visible = teachers
+        self.mode = values["mode"] as? String ?? "mine"
+        self.teacher = values["teacher"] as? String; self.teacherLabel = values["label"] as? String
+      } else { self.loadFailed = true }
+      self.updateLoading()
+    }
+  }
+  private func updateLoading() {
+    if loading || loadFailed {
+      let background = UIView(); let stack = UIStackView(); stack.axis = .vertical; stack.alignment = .center; stack.spacing = 12
+      if loading { let spinner = UIActivityIndicatorView(style: .medium); spinner.startAnimating(); stack.addArrangedSubview(spinner) }
+      let label = UILabel(); label.text = loading ? "시간표 설정을 불러오는 중이에요." : "시간표 설정을 불러오지 못했어요."; label.font = .preferredFont(forTextStyle: .body); label.textColor = .secondaryLabel
+      stack.addArrangedSubview(label)
+      if loadFailed { let retry = UIButton(type: .system); retry.setTitle("다시 시도", for: .normal); retry.addTarget(self, action: #selector(loadOptions), for: .touchUpInside); stack.addArrangedSubview(retry) }
+      background.addSubview(stack); stack.translatesAutoresizingMaskIntoConstraints = false
+      NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: background.centerXAnchor), stack.centerYAnchor.constraint(equalTo: background.centerYAnchor)])
+      tableView.backgroundView = background
+    } else { tableView.backgroundView = nil }
+    updateSaveButton(); tableView.reloadData()
   }
   func updateSaveButton() {
-    navigationItem.rightBarButtonItem?.isEnabled = mode != "teachers" || teachers.contains { $0["id"] == teacher }
+    navigationItem.rightBarButtonItem?.isEnabled = !loading && !loadFailed && (mode != "teachers" || teachers.contains { $0["id"] == teacher })
   }
   func textFieldShouldReturn(_ textField: UITextField) -> Bool {
     textField.resignFirstResponder(); return true
@@ -998,12 +1035,13 @@ private final class NativeStartupTimetable: UITableViewController, UITextFieldDe
   override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
     section == 1 ? 68 : UITableView.automaticDimension
   }
-  @objc func cancel() { dismiss(animated: true) { self.finish(nil) } }
+  @objc func cancel() { closed = true; dismiss(animated: true) { self.finish(nil) } }
   @objc func save() {
+    guard !loading && !loadFailed else { return }; closed = true
     let result: [String: Any] = ["mode": mode, "teacher": teacher as Any? ?? NSNull(), "label": teacherLabel as Any? ?? NSNull()]
     dismiss(animated: true) { self.finish(result) }
   }
-  override func numberOfSections(in tableView: UITableView) -> Int { mode == "teachers" ? 2 : 1 }
+  override func numberOfSections(in tableView: UITableView) -> Int { loading || loadFailed ? 0 : (mode == "teachers" ? 2 : 1) }
   override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 0 ? 3 : visible.count }
   override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { section == 0 ? "시작할 보기 모드" : "시작할 선생님" }
   override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {

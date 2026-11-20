@@ -138,3 +138,69 @@ class _StartupTimetablePageState extends State<StartupTimetablePage> {
     ),
   );
 }
+
+typedef StartupTimetableData = ({
+  StartupTimetable saved,
+  List<TeacherChoice> choices,
+});
+
+class StartupTimetableLoader extends StatefulWidget {
+  final Future<StartupTimetableData> Function() load;
+  const StartupTimetableLoader({super.key, required this.load});
+  @override
+  State<StartupTimetableLoader> createState() => _StartupTimetableLoaderState();
+}
+
+class _StartupTimetableLoaderState extends State<StartupTimetableLoader> {
+  StartupTimetableData? data;
+  bool failed = false;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) load();
+    });
+  }
+
+  Future<void> load() async {
+    setState(() => failed = false);
+    try {
+      final result = await widget.load();
+      if (mounted) setState(() => data = result);
+    } catch (_) {
+      if (mounted) setState(() => failed = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loaded = data;
+    if (loaded != null) {
+      return StartupTimetablePage(saved: loaded.saved, choices: loaded.choices);
+    }
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        middle: const Text('앱 시작 시 시간표'),
+        leading: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: () => Navigator.pop(context),
+          child: const Text('취소'),
+        ),
+      ),
+      child: SafeArea(
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!failed) const CupertinoActivityIndicator(),
+              const SizedBox(height: 12),
+              Text(failed ? '시간표 설정을 불러오지 못했어요.' : '시간표 설정을 불러오는 중이에요.'),
+              if (failed)
+                CupertinoButton(onPressed: load, child: const Text('다시 시도')),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

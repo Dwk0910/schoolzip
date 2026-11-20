@@ -21,6 +21,7 @@ class _SmokeState extends State<Smoke> {
   int tab = 0;
   String result = '오남고등학교';
   bool wide = false;
+  int startupLoads = 0;
 
   @override
   Widget build(BuildContext context) => HomeTabsLayout(
@@ -93,19 +94,35 @@ class _SmokeState extends State<Smoke> {
           onSchool: () {},
           schoolCode: 'ui-startup',
           onStartup: () async {
-            final saved = await StartupTimetable.read('ui-startup');
-            final result = await const MethodChannel('schoolzip/editors')
-                .invokeMapMethod<String, dynamic>('startupTimetable', {
-                  'mode': saved.mode.name,
-                  'teacher': saved.teacher,
-                  'label': saved.label,
-                  'teachers': [
-                    {'id': 'A', 'label': '김가람', 'subjects': '국어'},
-                    {'id': 'B', 'label': '이가람', 'subjects': '수학'},
-                  ],
-                });
-            if (result != null) {
-              await StartupTimetable.fromJson(result).save('ui-startup');
+            final loader = MethodChannel(
+              'schoolzip/test/startup/${DateTime.now().microsecondsSinceEpoch}',
+            );
+            loader.setMethodCallHandler((call) async {
+              await Future<void>.delayed(const Duration(seconds: 2));
+              if (++startupLoads == 1) {
+                throw PlatformException(code: 'testOffline');
+              }
+              final saved = await StartupTimetable.read('ui-startup');
+              return {
+                'mode': saved.mode.name,
+                'teacher': saved.teacher,
+                'label': saved.label,
+                'teachers': [
+                  {'id': 'A', 'label': '김가람', 'subjects': '국어'},
+                  {'id': 'B', 'label': '이가람', 'subjects': '수학'},
+                ],
+              };
+            });
+            try {
+              final result = await const MethodChannel('schoolzip/editors')
+                  .invokeMapMethod<String, dynamic>('startupTimetable', {
+                    'loader': loader.name,
+                  });
+              if (result != null) {
+                await StartupTimetable.fromJson(result).save('ui-startup');
+              }
+            } finally {
+              loader.setMethodCallHandler(null);
             }
           },
           onTeachers: () {},
