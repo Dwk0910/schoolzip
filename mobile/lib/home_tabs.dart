@@ -207,70 +207,22 @@ class _NativeTabsState extends State<_NativeTabs> {
   );
 }
 
-class TabBody extends StatefulWidget {
+/// Keep each tab alive without adding a custom page transition over the
+/// native iOS tab bar's selection animation.
+class TabBody extends StatelessWidget {
   final int index;
   final List<Widget> children;
   const TabBody({super.key, required this.index, required this.children});
-  @override
-  State<TabBody> createState() => _TabBodyState();
-}
-
-class _TabBodyState extends State<TabBody> with SingleTickerProviderStateMixin {
-  late final motion = AnimationController(
-    vsync: this,
-    upperBound: 2,
-    value: widget.index.toDouble(),
-    duration: const Duration(milliseconds: 260),
-  );
-  @override
-  void didUpdateWidget(TabBody oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.index != oldWidget.index) {
-      if (MediaQuery.disableAnimationsOf(context)) {
-        motion.value = widget.index.toDouble();
-      } else {
-        motion.animateTo(
-          widget.index.toDouble(),
-          duration: const Duration(milliseconds: 360),
-          curve: Curves.easeInOutCubic,
-        );
-      }
-    }
-  }
 
   @override
-  void dispose() {
-    motion.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => ClipRect(
-    child: Stack(
-      fit: StackFit.expand,
-      children: [
-        for (var i = 0; i < widget.children.length; i++)
-          AnimatedBuilder(
-            animation: motion,
-            child: widget.children[i],
-            builder: (_, page) {
-              final offset = i - motion.value;
-              return Offstage(
-                offstage: offset.abs() >= 1,
-                child: IgnorePointer(
-                  ignoring: i != widget.index,
-                  child: ExcludeSemantics(
-                    excluding: i != widget.index,
-                    child: FractionalTranslation(
-                      translation: Offset(offset, 0),
-                      child: page,
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-      ],
-    ),
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      for (var i = 0; i < children.length; i++)
+        Offstage(
+          offstage: i != index,
+          child: TickerMode(enabled: i == index, child: children[i]),
+        ),
+    ],
   );
 }
