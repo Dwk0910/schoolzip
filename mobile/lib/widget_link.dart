@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 String get timetableBaseUrl {
   const configured = String.fromEnvironment('API_BASE_URL');
   if (configured.isNotEmpty) return configured;
+  if (kReleaseMode) return 'https://schoolzip.tail2f41fe.ts.net';
   return Platform.isAndroid ? 'http://10.0.2.2:8080' : 'http://localhost:8080';
 }
 
