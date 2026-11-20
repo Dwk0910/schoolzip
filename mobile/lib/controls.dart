@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 
 import 'dart:io';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/services.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
@@ -694,14 +695,14 @@ class LargeTitleScroll extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CustomScrollView(
     slivers: [
-      CupertinoSliverNavigationBar(
-        largeTitle: Text(title),
-        trailing: trailing,
-        automaticallyImplyLeading: false,
-        transitionBetweenRoutes: false,
-        padding: EdgeInsetsDirectional.only(
-          start: padding.left,
-          end: padding.right,
+      SliverPersistentHeader(
+        pinned: true,
+        delegate: _PageTitleHeader(
+          title: title,
+          trailing: trailing,
+          topInset: MediaQuery.paddingOf(context).top,
+          horizontalPadding: padding,
+          largeTitleHeight: MediaQuery.textScalerOf(context).scale(34) + 18,
         ),
       ),
       SliverSafeArea(
@@ -714,4 +715,136 @@ class LargeTitleScroll extends StatelessWidget {
       ),
     ],
   );
+}
+
+class _PageTitleHeader extends SliverPersistentHeaderDelegate {
+  final String title;
+  final Widget? trailing;
+  final double topInset;
+  final EdgeInsets horizontalPadding;
+  final double largeTitleHeight;
+  const _PageTitleHeader({
+    required this.title,
+    required this.trailing,
+    required this.topInset,
+    required this.horizontalPadding,
+    required this.largeTitleHeight,
+  });
+
+  @override
+  double get minExtent => topInset + 44;
+  @override
+  double get maxExtent => minExtent + largeTitleHeight;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    final collapsed = (shrinkOffset / largeTitleHeight).clamp(0.0, 1.0);
+    final background = CupertinoTheme.of(context).scaffoldBackgroundColor;
+    return Stack(
+      fit: StackFit.expand,
+      clipBehavior: Clip.none,
+      children: [
+        // Fade the *filtered layer*, not the content, at the scroll edge.
+        // Keep the title/actions above this layer so they stay sharp.
+        Positioned.fill(
+          bottom: -18,
+          child: IgnorePointer(
+            child: ClipRect(
+              child: ShaderMask(
+                blendMode: BlendMode.dstIn,
+                shaderCallback: (bounds) => const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xffffffff),
+                    Color(0xffffffff),
+                    Color(0x00ffffff),
+                  ],
+                  stops: [0, .55, 1],
+                ).createShader(bounds),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  blendMode: BlendMode.src,
+                  child: ColoredBox(color: background.withValues(alpha: .8)),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: topInset,
+          left: 0,
+          right: 0,
+          height: 44,
+          child: MediaQuery.removePadding(
+            context: context,
+            removeTop: true,
+            child: CupertinoNavigationBar(
+              middle: collapsed <= .45
+                  ? const SizedBox.shrink()
+                  : Opacity(
+                      opacity: ((collapsed - .45) / .55).clamp(0.0, 1.0),
+                      child: Text(title),
+                    ),
+              trailing: trailing,
+              automaticallyImplyLeading: false,
+              transitionBetweenRoutes: false,
+              backgroundColor: const Color(0x00000000),
+              border: null,
+              automaticBackgroundVisibility: false,
+              enableBackgroundFilterBlur: false,
+              padding: EdgeInsetsDirectional.only(
+                start: horizontalPadding.left,
+                end: horizontalPadding.right,
+              ),
+            ),
+          ),
+        ),
+        if (collapsed < 2 / 3)
+          Positioned(
+            top: minExtent,
+            left: horizontalPadding.left,
+            right: horizontalPadding.right,
+            height: (largeTitleHeight - shrinkOffset).clamp(
+              0.0,
+              largeTitleHeight,
+            ),
+            child: ClipRect(
+              child: OverflowBox(
+                alignment: Alignment.bottomLeft,
+                minHeight: largeTitleHeight,
+                maxHeight: largeTitleHeight,
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Opacity(
+                      opacity: (1 - collapsed * 1.5).clamp(0.0, 1.0),
+                      child: Text(
+                        title,
+                        style: CupertinoTheme.of(context)
+                            .textTheme
+                            .navLargeTitleTextStyle,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  @override
+  bool shouldRebuild(_PageTitleHeader old) =>
+      title != old.title ||
+      trailing != old.trailing ||
+      topInset != old.topInset ||
+      horizontalPadding != old.horizontalPadding ||
+      largeTitleHeight != old.largeTitleHeight;
 }
