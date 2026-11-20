@@ -11,8 +11,10 @@ class SettingsPage extends StatefulWidget {
   final int allergyCount;
   final bool teachers, highlight;
   final void Function(String, bool) onDisplay;
+  final VoidCallback? onStartup;
   final VoidCallback onSchool, onTeachers, onReset, onGuide;
   const SettingsPage({
+    this.onStartup,
     required this.onAllergies,
     required this.allergyCount,
     super.key,
@@ -57,6 +59,9 @@ class _SettingsPageState extends State<SettingsPage> {
             case 'showTeachers':
             case 'highlightToday':
               widget.onDisplay(call.method, call.arguments as bool);
+              break;
+            case 'startup':
+              widget.onStartup?.call();
               break;
             case 'school':
               widget.onSchool();
@@ -219,6 +224,12 @@ class _SettingsPageState extends State<SettingsPage> {
                             ),
                           ),
                         ],
+                        CupertinoListTile(
+                          padding: rowPadding,
+                          title: const Text('앱 시작 시 시간표'),
+                          trailing: const CupertinoListTileChevron(),
+                          onTap: widget.onStartup,
+                        ),
                         CupertinoListTile(
                           padding: rowPadding,
                           title: const Text('선생님 이름 설정'),

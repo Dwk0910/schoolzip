@@ -175,7 +175,7 @@ private final class SettingsTable: UITableViewController {
     tableView.verticalScrollIndicatorInsets.bottom = bottomPadding
   }
   override func numberOfSections(in tableView: UITableView) -> Int { headers.count }
-  override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 1 ? 3 : section == 3 ? 2 : 1 }
+  override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 1 ? 4 : section == 3 ? 2 : 1 }
   override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { headers[section] }
   override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
     let cell = UITableViewCell(style: indexPath.section == 0 ? .value1 : .default, reuseIdentifier: nil)
@@ -185,7 +185,7 @@ private final class SettingsTable: UITableViewController {
       content.text = "학교 바꾸기"
       content.secondaryText = [selection["school"], selection["room"]].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
       content.secondaryTextProperties.color = .secondaryLabel
-    case 1: content.text = ["선생님 이름 표시","오늘 열 강조","선생님 이름 설정"][indexPath.row]
+    case 1: content.text = ["선생님 이름 표시","오늘 열 강조","앱 시작 시 시간표","선생님 이름 설정"][indexPath.row]
     case 2:
       content.text = "내 알레르기"
       let count = selection["allergyCount"] ?? "0"
@@ -214,6 +214,7 @@ private final class SettingsTable: UITableViewController {
   override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     tableView.deselectRow(at: indexPath, animated: true)
     if indexPath.section == 1 && indexPath.row < 2 { return }
+    if indexPath.section == 1 && indexPath.row == 2 { channel.invokeMethod("startup", arguments: nil); return }
     let action = indexPath.section == 3 ? (indexPath.row == 0 ? "guide" : "reset") : ["school","teachers","allergies"][indexPath.section]
     channel.invokeMethod(action, arguments: nil)
   }
@@ -237,6 +238,8 @@ private final class NativeEditors {
       switch call.method {
       case "allergies":
         page = NativeAllergies(names: args["names"] as? [String] ?? [], selected: args["selected"] as? [Int] ?? [], finish: reply)
+      case "startupTimetable":
+        page = NativeStartupTimetable(args: args, finish: reply)
       case "reviewTeacherNames":
         page = NativeTeacherReview(options: args["options"] as? [[String:String]] ?? [], title: args["title"] as? String ?? "이름 확인", loader: (args["loader"] as? String).map { FlutterMethodChannel(name: $0, binaryMessenger: messenger) }, finish: reply)
       case "teachers": page = NativeTeacherList(channel: self.channel, finish: reply)
@@ -920,5 +923,67 @@ private final class HorizontalTimetableScroll: UIScrollView {
       if abs(velocity.y) >= abs(velocity.x) { return false }
     }
     return super.gestureRecognizerShouldBegin(gestureRecognizer)
+  }
+}
+
+private final class NativeStartupTimetable: UITableViewController, UISearchResultsUpdating {
+  let finish: FlutterResult
+  let teachers: [[String: String]]
+  let modes = ["mine", "classes", "teachers"]
+  let labels = ["요일별 보기", "학급별 보기", "선생님별 보기"]
+  var mode: String
+  var teacher: String?
+  var teacherLabel: String?
+  var visible: [[String: String]] = []
+  let search = UISearchController(searchResultsController: nil)
+  init(args: [String: Any], finish: @escaping FlutterResult) {
+    self.finish = finish; teachers = args["teachers"] as? [[String: String]] ?? []
+    mode = args["mode"] as? String ?? "mine"; teacher = args["teacher"] as? String; teacherLabel = args["label"] as? String
+    super.init(style: .insetGrouped); title = "앱 시작 시 시간표"; visible = teachers
+  }
+  required init?(coder: NSCoder) { fatalError() }
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancel))
+    navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .save, target: self, action: #selector(save))
+    search.searchResultsUpdater = self; search.obscuresBackgroundDuringPresentation = false; search.searchBar.placeholder = "선생님 이름 검색"
+    refresh()
+  }
+  func refresh() {
+    navigationItem.searchController = mode == "teachers" ? search : nil
+    navigationItem.rightBarButtonItem?.isEnabled = mode != "teachers" || teachers.contains { $0["id"] == teacher }
+    tableView.reloadData()
+  }
+  func updateSearchResults(for searchController: UISearchController) {
+    let query = searchController.searchBar.text ?? ""
+    visible = teachers.filter { query.isEmpty || (($0["label"] ?? "") + ($0["subjects"] ?? "")).localizedCaseInsensitiveContains(query) }
+    tableView.reloadData()
+  }
+  @objc func cancel() { dismiss(animated: true) { self.finish(nil) } }
+  @objc func save() {
+    let result: [String: Any] = ["mode": mode, "teacher": teacher as Any? ?? NSNull(), "label": teacherLabel as Any? ?? NSNull()]
+    dismiss(animated: true) { self.finish(result) }
+  }
+  override func numberOfSections(in tableView: UITableView) -> Int { mode == "teachers" ? 2 : 1 }
+  override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 0 ? 3 : visible.count }
+  override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { section == 0 ? "시작할 보기 모드" : "시작할 선생님" }
+  override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+    if section == 1 && teachers.isEmpty { return "선생님 명단을 불러오지 못했어요. 시간표를 새로고침한 뒤 다시 열어 주세요." }
+    return section == 0 ? "다음 앱 실행부터 적용돼요. 사용 중 보기 모드를 바꿔도 이 설정은 유지돼요." : nil
+  }
+  override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+    if indexPath.section == 0 {
+      cell.textLabel?.text = labels[indexPath.row]; cell.accessoryType = mode == modes[indexPath.row] ? .checkmark : .none
+    } else {
+      let item = visible[indexPath.row]; cell.textLabel?.text = (item["label"] ?? "") + " 선생님"; cell.detailTextLabel?.text = item["subjects"]; cell.accessoryType = item["id"] == teacher ? .checkmark : .none
+    }
+    return cell
+  }
+  override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    tableView.deselectRow(at: indexPath, animated: true)
+    if indexPath.section == 0 { mode = modes[indexPath.row] }
+    else { teacher = visible[indexPath.row]["id"]; teacherLabel = visible[indexPath.row]["label"] }
+    refresh()
   }
 }

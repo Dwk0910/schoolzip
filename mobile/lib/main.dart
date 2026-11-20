@@ -1,3 +1,4 @@
+import 'startup_timetable.dart';
 import 'timetable_grid.dart';
 import 'native_home.dart';
 import 'timetable_views.dart';
@@ -371,6 +372,7 @@ class _SchoolHomeState extends State<SchoolHome> {
                   teachers: teachers,
                   highlight: highlight,
                   onDisplay: changeDisplay,
+                  onStartup: () => weeklyKey.currentState?.editStartup(),
                   school: school!['name'],
                   room: preferred?['code'] == school!['code']
                       ? "${preferred!['grade']}학년 ${preferred!['room']}반"
@@ -1068,6 +1070,56 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  Future<void> restoreStartup() async {
+    final saved = await StartupTimetable.read(widget.school['code'].toString());
+    if (!mounted) return;
+    viewMode = saved.mode;
+    overviewTeacher = saved.teacher;
+    overviewTeacherLabel = saved.label;
+  }
+
+  Future<void> editStartup() async {
+    final code = widget.school['code'].toString();
+    final saved = await StartupTimetable.read(code);
+    dynamic table;
+    try {
+      table = await data;
+    } catch (_) {
+      table = offlineWeek;
+    }
+    if (!mounted) return;
+    final choices = teacherChoices(
+      table?['grades'] as Map<String, dynamic>? ?? {},
+      displayTeacher,
+    );
+    final StartupTimetable? selected;
+    if (Platform.isIOS) {
+      final result = await const MethodChannel('schoolzip/editors')
+          .invokeMapMethod<String, dynamic>('startupTimetable', {
+            'mode': saved.mode.name,
+            'teacher': saved.teacher,
+            'label': saved.label,
+            'teachers': [
+              for (final choice in choices)
+                {
+                  'id': choice.id,
+                  'label': choice.label,
+                  'subjects': choice.subjects,
+                },
+            ],
+          });
+      selected = result == null ? null : StartupTimetable.fromJson(result);
+    } else {
+      selected = await Navigator.push<StartupTimetable>(
+        context,
+        CupertinoPageRoute(
+          builder: (_) => StartupTimetablePage(saved: saved, choices: choices),
+        ),
+      );
+    }
+    if (selected != null) await selected.save(code);
+  }
+
   int week = 0;
   TimetableMode viewMode = TimetableMode.mine;
   String? overviewTeacher;
@@ -1543,7 +1595,9 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
     if (widget.initialWeek == null && widget.preferred != null) {
       unawaited(readSnapshot());
     }
-    data = _forNextBuild(load(widget.initialWeek));
+    data = _forNextBuild(
+      restoreStartup().then((_) => load(widget.initialWeek)),
+    );
   }
 
   @override
