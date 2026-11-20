@@ -1,0 +1,37 @@
+name: schoolzip
+services:
+  api:
+    image: schoolzip-backend:production
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    mem_limit: 768m
+    environment:
+      SCHOOLZIP_NAMES_DB: /data/teacher-names
+      NEIS_API_KEY: ${NEIS_API_KEY:-}
+      TZ: Asia/Seoul
+    volumes:
+      - ./data:/data
+    networks:
+      - schoolzip
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  tailscale:
+    image: tailscale/tailscale:latest
+    hostname: schoolzip
+    entrypoint: ["tailscaled"]
+    command: ["--tun=userspace-networking", "--state=/var/lib/tailscale/tailscaled.state"]
+    restart: unless-stopped
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+    networks:
+      - schoolzip
+volumes:
+  tailscale-state:
+networks:
+  schoolzip:

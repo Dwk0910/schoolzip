@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+.venv
+__pycache__
+**/__pycache__
+target
+data
+backups
+*.mv.db
+*.trace.db
+*.sql
+*.zip
+*.log
