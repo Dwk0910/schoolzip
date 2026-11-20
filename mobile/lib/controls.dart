@@ -692,29 +692,26 @@ class LargeTitleScroll extends StatelessWidget {
     required this.children,
   });
   @override
-  Widget build(BuildContext context) => ListView(
-    padding: EdgeInsets.fromLTRB(
-      padding.left,
-      20,
-      padding.right,
-      padding.bottom,
-    ),
-    children: [
-      Stack(
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 34,
-              fontWeight: FontWeight.bold,
-              letterSpacing: .37,
-            ),
-          ),
-          if (trailing != null) Positioned(right: 0, top: 0, child: trailing!),
-        ],
+  Widget build(BuildContext context) => CustomScrollView(
+    slivers: [
+      CupertinoSliverNavigationBar(
+        largeTitle: Text(title),
+        trailing: trailing,
+        automaticallyImplyLeading: false,
+        transitionBetweenRoutes: false,
+        padding: EdgeInsetsDirectional.only(
+          start: padding.left,
+          end: padding.right,
+        ),
       ),
-      const SizedBox(height: 6),
-      ...children,
+      SliverSafeArea(
+        top: false,
+        bottom: false,
+        sliver: SliverPadding(
+          padding: padding,
+          sliver: SliverList.list(children: children),
+        ),
+      ),
     ],
   );
 }

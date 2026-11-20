@@ -163,9 +163,8 @@ private final class SettingsHost: UIView, FlutterPlatformView {
   init(frame: CGRect, controller: SettingsTable) {
     navigation = UINavigationController(rootViewController: controller)
     super.init(frame: frame)
-    // The root settings title shares the content-header geometry of the other tabs.
-    // Editors still use their own standard UINavigationController bars.
-    navigation.setNavigationBarHidden(true, animated: false)
+    navigation.navigationBar.prefersLargeTitles = true
+    controller.navigationItem.largeTitleDisplayMode = .always
     navigation.view.frame = bounds
     navigation.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     addSubview(navigation.view)
@@ -194,10 +193,6 @@ private final class SettingsHost: UIView, FlutterPlatformView {
 private final class SettingsTable: UITableViewController {
   private var selection: [String:String]
   private let channel: FlutterMethodChannel
-  private let titleLabel = UILabel()
-  private let titleHeader = UIView()
-  private var headerWidth: CGFloat = 0
-  private var headerHeight: CGFloat = 0
   private let headers = ["학교 설정", "시간표", "급식", "기타"]
   init(_ selection: [String:String], _ channel: FlutterMethodChannel) {
     self.selection = selection
@@ -234,27 +229,8 @@ private final class SettingsTable: UITableViewController {
     super.viewDidLoad()
     tableView.rowHeight = UITableView.automaticDimension
     tableView.estimatedRowHeight = 44
-    titleLabel.text = "설정"
-    titleLabel.font = UIFont(descriptor: UIFont.preferredFont(forTextStyle: .largeTitle).fontDescriptor.withSymbolicTraits(.traitBold) ?? UIFont.preferredFont(forTextStyle: .largeTitle).fontDescriptor, size: 0)
-    titleLabel.adjustsFontForContentSizeCategory = true
-    titleLabel.textColor = .label
-    titleLabel.accessibilityTraits.insert(.header)
-    titleHeader.addSubview(titleLabel)
-    tableView.tableHeaderView = titleHeader
     tableView.contentInset.bottom = 90
     tableView.verticalScrollIndicatorInsets.bottom = 90
-  }
-  override func viewDidLayoutSubviews() {
-    super.viewDidLayoutSubviews()
-    let width = tableView.bounds.width
-    let size = titleLabel.sizeThatFits(CGSize(width: max(0, width - 40), height: .greatestFiniteMagnitude))
-    let height = 20 + size.height + 6
-    titleLabel.frame = CGRect(x: 20, y: 20, width: max(0, width - 40), height: size.height)
-    if width != headerWidth || height != headerHeight {
-      headerWidth = width; headerHeight = height
-      titleHeader.frame = CGRect(x: 0, y: 0, width: width, height: height)
-      tableView.tableHeaderView = titleHeader
-    }
   }
   override func numberOfSections(in tableView: UITableView) -> Int { headers.count }
   override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 1 ? 3 : section == 3 ? 2 : 1 }

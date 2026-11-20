@@ -85,6 +85,7 @@ class _MealPageState extends State<MealPage> {
     final ink = CupertinoColors.secondaryLabel.resolveFrom(context);
     return CupertinoPageScaffold(
       child: SafeArea(
+        top: false,
         bottom: false,
         child: LargeTitleScroll(
           title: '급식 식단표',

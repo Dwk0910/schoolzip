@@ -1536,6 +1536,7 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
     child: SafeArea(
+      top: false,
       bottom: false,
       child: LargeTitleScroll(
         title: '주간 시간표',
