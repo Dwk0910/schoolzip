@@ -334,14 +334,14 @@ class _DishRow extends StatelessWidget {
         .map(allergenLabel)
         .join(' · ');
     final warning = CupertinoTheme.brightnessOf(context) == Brightness.dark
-        ? const Color(0xffffb7ac)
-        : const Color(0xffa6261c);
+        ? const Color(0xffdfb477)
+        : const Color(0xff9a6526);
     final muted = CupertinoColors.secondaryLabel.resolveFrom(context);
     return Container(
       margin: const EdgeInsets.only(top: 2),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: matches.isEmpty ? null : warning.withValues(alpha: .10),
+        color: matches.isEmpty ? null : warning.withValues(alpha: .08),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(

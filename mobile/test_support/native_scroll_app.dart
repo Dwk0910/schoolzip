@@ -79,6 +79,9 @@ class _SmokeState extends State<Smoke> {
           },
         ),
         MealPage(
+          allergies: const bool.fromEnvironment('MEAL_CARD_PREVIEW')
+              ? const {5, 15}
+              : const {},
           school: const {'name': '오남고등학교'},
           active: tab == 1,
           fetch: (_, _) async => const bool.fromEnvironment('MEAL_CARD_PREVIEW')

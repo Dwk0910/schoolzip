@@ -7,6 +7,8 @@ final class ScrollTests: XCTestCase {
     XCTAssertTrue(app.staticTexts["중식"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["782.4 Kcal"].exists)
     XCTAssertTrue(app.staticTexts["현미밥"].exists)
+    XCTAssertTrue(app.images["meal-allergy-warning"].firstMatch.exists)
+    XCTAssertTrue(app.staticTexts["내 알레르기 · 대두 · 닭고기"].exists)
     let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "meal-card-hierarchy"; shot.lifetime = .keepAlways; add(shot)
   }
   func testStartupModeSelection() throws {

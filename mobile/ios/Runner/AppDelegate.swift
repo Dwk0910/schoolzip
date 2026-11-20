@@ -898,12 +898,23 @@ private final class SchoolContentTable: UITableViewController {
         body.addArrangedSubview(separator); body.setCustomSpacing(10, after: separator)
         for dish in meal["dishes"] as? [[String:String]] ?? [] {
           let text = stack(spacing: 3)
-          text.addArrangedSubview(label(dish["name"] ?? "", size: 16))
           let warning = dish["warning"] ?? ""
-          if !warning.isEmpty { text.addArrangedSubview(label(warning, size: 14, weight: .semibold, color: .systemRed)) }
+          let warningColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark ? UIColor(red: 223/255, green: 180/255, blue: 119/255, alpha: 1) : UIColor(red: 154/255, green: 101/255, blue: 38/255, alpha: 1)
+          }
+          let heading = stack(axis: .horizontal, spacing: 6); heading.alignment = .top
+          if !warning.isEmpty {
+            let icon = UIImageView(image: UIImage(systemName: "exclamationmark.triangle.fill")); icon.tintColor = warningColor; icon.contentMode = .scaleAspectFit
+            icon.widthAnchor.constraint(equalToConstant: 16).isActive = true
+            icon.heightAnchor.constraint(equalToConstant: 20).isActive = true
+            icon.accessibilityIdentifier = "meal-allergy-warning"; icon.isAccessibilityElement = true; icon.accessibilityLabel = "알레르기 주의"
+            heading.addArrangedSubview(icon)
+          }
+          heading.addArrangedSubview(label(dish["name"] ?? "", size: 16)); text.addArrangedSubview(heading)
+          if !warning.isEmpty { text.addArrangedSubview(label(warning, size: 14, weight: .semibold, color: warningColor)) }
           if let allergens = dish["allergens"], !allergens.isEmpty { text.addArrangedSubview(label(allergens, size: 13, color: .secondaryLabel)) }
           let dishBox = UIView(); dishBox.layer.cornerRadius = 12
-          if !warning.isEmpty { dishBox.backgroundColor = UIColor.systemRed.withAlphaComponent(0.1) }
+          if !warning.isEmpty { dishBox.backgroundColor = warningColor.withAlphaComponent(0.08) }
           pin(text, to: dishBox, inset: 6); body.addArrangedSubview(dishBox)
         }
         let card = UIView(); card.backgroundColor = .secondarySystemGroupedBackground; card.layer.cornerRadius = 18
