@@ -1,5 +1,14 @@
 import XCTest
 final class ScrollTests: XCTestCase {
+  func testMealCardHierarchy() throws {
+    let app = XCUIApplication(bundleIdentifier: "app.schoolzip.schoolzip"); app.launch()
+    XCTAssertTrue(app.staticTexts["주간 시간표"].firstMatch.waitForExistence(timeout: 15))
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.94)).tap()
+    XCTAssertTrue(app.staticTexts["중식"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["782.4 Kcal"].exists)
+    XCTAssertTrue(app.staticTexts["현미밥"].exists)
+    let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "meal-card-hierarchy"; shot.lifetime = .keepAlways; add(shot)
+  }
   func testStartupModeSelection() throws {
     let app = XCUIApplication(bundleIdentifier: "app.schoolzip.schoolzip")
     app.launch()

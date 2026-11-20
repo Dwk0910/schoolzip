@@ -881,13 +881,24 @@ private final class SchoolContentTable: UITableViewController {
     case "ready":
       for meal in model["meals"] as? [[String:Any]] ?? [] {
         let body = stack(spacing: 8)
-        let header = stack(axis: .horizontal, spacing: 8)
-        header.addArrangedSubview(label(meal["type"] as? String ?? "", size: 20, weight: .bold))
-        header.addArrangedSubview(label(meal["calories"] as? String ?? "", size: 14, color: .secondaryLabel))
-        body.addArrangedSubview(header)
+        let header = stack(axis: .horizontal, spacing: 8); header.alignment = .center
+        let icon = UIImageView(image: UIImage(systemName: "fork.knife")); icon.tintColor = .systemIndigo; icon.contentMode = .scaleAspectFit
+        icon.widthAnchor.constraint(equalToConstant: 22).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        header.addArrangedSubview(icon)
+        let title = label(meal["type"] as? String ?? "", size: 20, weight: .bold)
+        title.accessibilityTraits.insert(.header); header.addArrangedSubview(title)
+        let calories = label(meal["calories"] as? String ?? "", size: 14, color: .secondaryLabel)
+        calories.textAlignment = .right; calories.setContentHuggingPriority(.required, for: .horizontal)
+        calories.setContentCompressionResistancePriority(.required, for: .horizontal)
+        header.addArrangedSubview(calories)
+        body.addArrangedSubview(header); body.setCustomSpacing(12, after: header)
+        let separator = UIView(); separator.backgroundColor = .separator
+        separator.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale).isActive = true
+        body.addArrangedSubview(separator); body.setCustomSpacing(10, after: separator)
         for dish in meal["dishes"] as? [[String:String]] ?? [] {
           let text = stack(spacing: 3)
-          text.addArrangedSubview(label(dish["name"] ?? "", size: 16, weight: .semibold))
+          text.addArrangedSubview(label(dish["name"] ?? "", size: 16))
           let warning = dish["warning"] ?? ""
           if !warning.isEmpty { text.addArrangedSubview(label(warning, size: 14, weight: .semibold, color: .systemRed)) }
           if let allergens = dish["allergens"], !allergens.isEmpty { text.addArrangedSubview(label(allergens, size: 13, color: .secondaryLabel)) }

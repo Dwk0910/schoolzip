@@ -81,7 +81,26 @@ class _SmokeState extends State<Smoke> {
         MealPage(
           school: const {'name': '오남고등학교'},
           active: tab == 1,
-          fetch: (_, _) async => <dynamic>[],
+          fetch: (_, _) async => const bool.fromEnvironment('MEAL_CARD_PREVIEW')
+              ? <dynamic>[
+                  {
+                    'type': '중식',
+                    'calories': '782.4 Kcal',
+                    'dishes': [
+                      '현미밥',
+                      '쇠고기미역국(5.6.16)',
+                      '닭갈비(5.6.15)',
+                      '배추김치(9)',
+                      '사과',
+                    ],
+                  },
+                  {
+                    'type': '석식',
+                    'calories': '695.2 Kcal',
+                    'dishes': ['김치볶음밥(5.6.9)', '계란국(1)', '요구르트(2)'],
+                  },
+                ]
+              : <dynamic>[],
         ),
         SettingsPage(
           onAllergies: () {},
