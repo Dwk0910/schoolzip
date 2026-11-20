@@ -25,11 +25,22 @@ final class ScrollTests: XCTestCase {
     XCTAssertTrue(option.waitForExistence(timeout: 5))
     option.tap()
     XCTAssertTrue(app.staticTexts["선택 완료"].waitForExistence(timeout: 5))
+    // Start inside a horizontally scrollable grid, not in the page margin.
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)))
+    XCTAssertLessThan(title.frame.height, expanded.height)
+    let wide = XCTAttachment(screenshot: app.screenshot()); wide.name = "wide-grid-vertical-scroll"; wide.lifetime = .keepAlways; add(wide)
+    for _ in 0..<3 { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))) }
+    XCTAssertGreaterThan(title.frame.height, 30)
     app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.94)).tap()
     XCTAssertTrue(app.staticTexts["급식 식단표"].firstMatch.waitForExistence(timeout: 5))
     let mealTitle = app.staticTexts["급식 식단표"].firstMatch
-    let date = app.buttons["11월 20일 (금)"].firstMatch
+    let date = app.buttons["meal-date"].firstMatch
     XCTAssertTrue(date.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.images["empty-meal-illustration"].waitForExistence(timeout: 5))
+    XCTAssertLessThan(app.buttons["이전 날짜"].frame.width, 50)
+    date.tap()
+    XCTAssertTrue(app.buttons["다음 달"].firstMatch.waitForExistence(timeout: 5))
+    app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "오늘")).firstMatch.tap()
     let mealFrame = mealTitle.frame
     let dateFrame = date.frame
     app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))

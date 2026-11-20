@@ -1,5 +1,6 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:schoolzip/native_home.dart';
+import 'package:schoolzip/meals.dart';
 import 'package:schoolzip/timetable_views.dart';
 import 'package:schoolzip/home_tabs.dart';
 import 'package:schoolzip/settings_page.dart';
@@ -17,6 +18,7 @@ class Smoke extends StatefulWidget {
 class _SmokeState extends State<Smoke> {
   int tab = 0;
   String result = '오남고등학교';
+  bool wide = false;
 
   @override
   Widget build(BuildContext context) => HomeTabsLayout(
@@ -34,12 +36,12 @@ class _SmokeState extends State<Smoke> {
             'showWeek': true,
             'week': 0,
             'status': 'ready',
-            'horizontal': false,
+            'horizontal': wide,
             'periods': 20,
             'columns': [
-              for (var i = 0; i < 5; i++)
+              for (var i = 0; i < (wide ? 12 : 5); i++)
                 {
-                  'label': '월화수목금'[i],
+                  'label': wide ? '${i + 1}반' : '월화수목금'[i],
                   'detail': '11/${16 + i}',
                   'badge': i == 0 ? '오늘' : null,
                   'highlighted': i == 0,
@@ -47,7 +49,7 @@ class _SmokeState extends State<Smoke> {
             ],
             'cells': [
               for (var p = 1; p <= 20; p++)
-                for (var c = 0; c < 5; c++)
+                for (var c = 0; c < (wide ? 12 : 5); c++)
                   {
                     'column': c,
                     'period': p,
@@ -64,19 +66,19 @@ class _SmokeState extends State<Smoke> {
               final value = await chooseViewOption(context, '시간표 보기', [
                 ('selected', '모드 선택 확인'),
               ], 'selected');
-              if (mounted && value != null) setState(() => result = '선택 완료');
+              if (mounted && value != null) {
+                setState(() {
+                  result = '선택 완료';
+                  wide = true;
+                });
+              }
             }
           },
         ),
-        NativePageModel(
-          page: 'meals',
-          model: {
-            'subtitle': '오남고등학교',
-            'date': '11월 20일 (금)',
-            'status': 'empty',
-            'showToday': false,
-          },
-          onAction: (_, _) {},
+        MealPage(
+          school: const {'name': '오남고등학교'},
+          active: tab == 1,
+          fetch: (_, _) async => <dynamic>[],
         ),
         SettingsPage(
           onAllergies: () {},
