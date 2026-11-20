@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/rendering.dart' show PlatformViewHitTestBehavior;
 
 import 'dart:io';
 
@@ -699,101 +698,129 @@ class LargeTitleScroll extends StatefulWidget {
 }
 
 class _LargeTitleScrollState extends State<LargeTitleScroll> {
+  static const nativeChannel = MethodChannel('schoolzip/page-scroll');
+  static _LargeTitleScrollState? owner;
   final scroll = ScrollController();
-  MethodChannel? channel;
+  late final id = identityHashCode(this).toString();
   double? nativeHeaderHeight;
+  double lastExtent = -1;
+  bool active = false;
+  bool syncing = false;
 
-  @override
-  void initState() {
-    super.initState();
-    scroll.addListener(syncScroll);
-  }
-
-  void syncScroll() {
-    channel?.invokeMethod<void>(
-      'scroll',
-      scroll.hasClients ? scroll.offset : 0.0,
-    );
+  void updateNative() {
+    if (!mounted || !Platform.isIOS) return;
+    final visible =
+        TickerMode.valuesOf(context).enabled &&
+        (ModalRoute.of(context)?.isCurrent ?? true);
+    if (!visible) {
+      if (owner == this) {
+        owner = null;
+        nativeChannel.invokeMethod<void>('configure', {'enabled': false});
+      }
+      active = false;
+      return;
+    }
+    if (!scroll.hasClients) return;
+    final extent = scroll.position.maxScrollExtent;
+    if (!active || owner != this) {
+      active = true;
+      owner = this;
+      nativeChannel.setMethodCallHandler((call) async {
+        if (!mounted || owner != this) return;
+        if (call.method == 'action' && call.arguments == id) {
+          widget.onAction?.call();
+        }
+        if (call.arguments is! Map) return;
+        final data = call.arguments as Map;
+        if (data['id'] != id) return;
+        if (call.method == 'metrics') {
+          final height = (data['header'] as num).toDouble();
+          if (height > 44 && height != nativeHeaderHeight) {
+            setState(() => nativeHeaderHeight = height);
+          }
+        }
+        if (call.method == 'scroll' && scroll.hasClients) {
+          final offset = (data['offset'] as num).toDouble().clamp(
+            0.0,
+            scroll.position.maxScrollExtent,
+          );
+          if ((offset - scroll.offset).abs() > .1) {
+            syncing = true;
+            scroll.jumpTo(offset);
+            syncing = false;
+          }
+        }
+      });
+      nativeChannel.invokeMethod<void>('configure', {
+        'enabled': true,
+        'id': id,
+        'title': widget.title,
+        'action': widget.actionLabel,
+        'maximum': extent,
+        'offset': scroll.offset,
+      });
+      lastExtent = extent;
+    } else if ((extent - lastExtent).abs() > .5) {
+      lastExtent = extent;
+      nativeChannel.invokeMethod<void>('extent', extent);
+    }
   }
 
   @override
   void dispose() {
-    channel?.setMethodCallHandler(null);
+    if (owner == this) {
+      owner = null;
+      nativeChannel.invokeMethod<void>('configure', {'enabled': false});
+      nativeChannel.setMethodCallHandler(null);
+    }
     scroll.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    TickerMode.valuesOf(context).enabled;
+    ModalRoute.of(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) => updateNative());
     final native = Platform.isIOS;
     final headerHeight =
         nativeHeaderHeight ?? MediaQuery.paddingOf(context).top + 96;
-    final body = CustomScrollView(
-      controller: scroll,
-      slivers: [
-        if (native)
-          SliverToBoxAdapter(child: SizedBox(height: headerHeight))
-        else
-          CupertinoSliverNavigationBar(
-            largeTitle: Text(widget.title),
-            trailing: widget.onAction == null
-                ? null
-                : CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: widget.onAction,
-                    child: Text(widget.actionLabel!),
-                  ),
-            automaticallyImplyLeading: false,
-            transitionBetweenRoutes: false,
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: (_) {
+        if (!syncing) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => updateNative());
+        }
+        return false;
+      },
+      child: CustomScrollView(
+        controller: scroll,
+        physics: native ? const NeverScrollableScrollPhysics() : null,
+        slivers: [
+          if (native)
+            SliverToBoxAdapter(child: SizedBox(height: headerHeight))
+          else
+            CupertinoSliverNavigationBar(
+              largeTitle: Text(widget.title),
+              trailing: widget.onAction == null
+                  ? null
+                  : CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: widget.onAction,
+                      child: Text(widget.actionLabel!),
+                    ),
+              automaticallyImplyLeading: false,
+              transitionBetweenRoutes: false,
+            ),
+          SliverSafeArea(
+            top: false,
+            bottom: false,
+            sliver: SliverPadding(
+              padding: widget.padding,
+              sliver: SliverList.list(children: widget.children),
+            ),
           ),
-        SliverSafeArea(
-          top: false,
-          bottom: false,
-          sliver: SliverPadding(
-            padding: widget.padding,
-            sliver: SliverList.list(children: widget.children),
-          ),
-        ),
-      ],
-    );
-    if (!native) return body;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        body,
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          height: headerHeight,
-          child: UiKitView(
-            viewType: 'schoolzip/navigation-header',
-            hitTestBehavior: PlatformViewHitTestBehavior.translucent,
-            creationParams: {
-              'title': widget.title,
-              'action': widget.actionLabel,
-            },
-            creationParamsCodec: const StandardMessageCodec(),
-            onPlatformViewCreated: (id) {
-              if (!mounted) return;
-              final bridge = MethodChannel('schoolzip/navigation-header/$id');
-              channel = bridge;
-              bridge.setMethodCallHandler((call) async {
-                if (!mounted) return;
-                if (call.method == 'action') widget.onAction?.call();
-                if (call.method == 'height') {
-                  final height = (call.arguments as num).toDouble();
-                  if (height > 0 && nativeHeaderHeight != height) {
-                    setState(() => nativeHeaderHeight = height);
-                  }
-                }
-                if (call.method == 'ready') syncScroll();
-              });
-              syncScroll();
-            },
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
