@@ -11,4 +11,4 @@ xcodebuild test -project ios/ScrollUITests/ScrollTests.xcodeproj -scheme ScrollT
 flutter build ios --release --config-only --target lib/main.dart
 ```
 
-The UI test sends real UIKit touch events. It checks the initial large title, collapse after scrolling, full restoration after scrolling back, native school-change action, Flutter content taps, and all three tabs. Collapsed and restored screenshots are attached to the Xcode test result. Restore `lib/main.dart` as the build target before making a production build.
+The UI test sends real UIKit touch events. It checks the initial large title, collapse after scrolling, full restoration after scrolling back, native school-change and content actions, Flutter selector presentation above native screens, and all three tabs. On the short meal page it checks that neither title nor content scrolls independently. Collapsed and restored screenshots are attached to the Xcode test result. Restore `lib/main.dart` as the build target before making a production build.

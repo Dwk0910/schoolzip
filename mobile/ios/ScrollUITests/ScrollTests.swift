@@ -18,10 +18,26 @@ final class ScrollTests: XCTestCase {
     let restored = XCTAttachment(screenshot: app.screenshot()); restored.name = "restored"; restored.lifetime = .keepAlways; add(restored)
     app.buttons["학교 바꾸기"].firstMatch.tap()
     XCTAssertTrue(app.staticTexts["학교 선택 완료"].waitForExistence(timeout: 5))
-    app.buttons["본문 버튼"].firstMatch.tap()
+    app.buttons["1학년 7반"].firstMatch.tap()
     XCTAssertTrue(app.staticTexts["본문 터치 완료"].waitForExistence(timeout: 5))
+    app.buttons["요일별 보기"].firstMatch.tap()
+    let option = app.buttons["모드 선택 확인"].firstMatch
+    XCTAssertTrue(option.waitForExistence(timeout: 5))
+    option.tap()
+    XCTAssertTrue(app.staticTexts["선택 완료"].waitForExistence(timeout: 5))
     app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.94)).tap()
     XCTAssertTrue(app.staticTexts["급식 식단표"].firstMatch.waitForExistence(timeout: 5))
+    let mealTitle = app.staticTexts["급식 식단표"].firstMatch
+    let date = app.buttons["11월 20일 (금)"].firstMatch
+    XCTAssertTrue(date.waitForExistence(timeout: 5))
+    let mealFrame = mealTitle.frame
+    let dateFrame = date.frame
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
+    sleep(1)
+    XCTAssertEqual(mealTitle.frame.minY, mealFrame.minY, accuracy: 1)
+    XCTAssertEqual(mealTitle.frame.height, mealFrame.height, accuracy: 1)
+    XCTAssertEqual(date.frame.minY, dateFrame.minY, accuracy: 1)
+    let shortPage = XCTAttachment(screenshot: app.screenshot()); shortPage.name = "short-content"; shortPage.lifetime = .keepAlways; add(shortPage)
     app.coordinate(withNormalizedOffset: CGVector(dx: 0.71, dy: 0.94)).tap()
     XCTAssertTrue(app.staticTexts["설정"].firstMatch.waitForExistence(timeout: 5))
     app.coordinate(withNormalizedOffset: CGVector(dx: 0.29, dy: 0.94)).tap()
