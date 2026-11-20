@@ -12,7 +12,18 @@ final class ScrollTests: XCTestCase {
     app.staticTexts["요일별 보기"].firstMatch.tap()
     teacherMode.tap()
     let teacher = app.staticTexts["이가람 선생님"].firstMatch
-    XCTAssertTrue(teacher.waitForExistence(timeout: 5)); teacher.tap()
+    XCTAssertTrue(teacher.waitForExistence(timeout: 5))
+    let search = app.textFields["선생님 이름 검색"].firstMatch
+    XCTAssertTrue(search.waitForExistence(timeout: 5))
+    let teacherCell = app.cells.containing(.staticText, identifier: "김가람 선생님").firstMatch
+    XCTAssertEqual(search.frame.minX, teacherCell.frame.minX, accuracy: 1)
+    XCTAssertEqual(search.frame.maxX, teacherCell.frame.maxX, accuracy: 1)
+    XCTAssertGreaterThanOrEqual(teacherCell.frame.minY - search.frame.maxY, 12)
+    let layout = XCTAttachment(screenshot: app.screenshot()); layout.name = "startup-search-aligned"; layout.lifetime = .keepAlways; add(layout)
+    search.tap(); search.typeText("이가")
+    XCTAssertFalse(app.staticTexts["김가람 선생님"].exists)
+    XCTAssertEqual(app.textFields.firstMatch.value as? String, "이가")
+    teacher.tap()
     let selected = XCTAttachment(screenshot: app.screenshot()); selected.name = "startup-teacher-selected"; selected.lifetime = .keepAlways; add(selected)
     app.staticTexts["학급별 보기"].firstMatch.tap()
     XCTAssertFalse(teacher.exists)

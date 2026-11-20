@@ -929,7 +929,7 @@ private final class HorizontalTimetableScroll: UIScrollView {
   }
 }
 
-private final class NativeStartupTimetable: UITableViewController, UISearchBarDelegate {
+private final class NativeStartupTimetable: UITableViewController, UITextFieldDelegate {
   let finish: FlutterResult
   let teachers: [[String: String]]
   let modes = ["mine", "classes", "teachers"]
@@ -938,7 +938,19 @@ private final class NativeStartupTimetable: UITableViewController, UISearchBarDe
   var teacher: String?
   var teacherLabel: String?
   var visible: [[String: String]] = []
-  let search = UISearchBar()
+  let search = UISearchTextField(frame: .zero)
+  lazy var searchHeader: UIView = {
+    let header = UIView()
+    header.addSubview(search)
+    search.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      search.leadingAnchor.constraint(equalTo: header.leadingAnchor),
+      search.trailingAnchor.constraint(equalTo: header.trailingAnchor),
+      search.topAnchor.constraint(equalTo: header.topAnchor, constant: 8),
+      search.heightAnchor.constraint(equalToConstant: 44),
+    ])
+    return header
+  }()
   init(args: [String: Any], finish: @escaping FlutterResult) {
     self.finish = finish; teachers = args["teachers"] as? [[String: String]] ?? []
     mode = args["mode"] as? String ?? "mine"; teacher = args["teacher"] as? String; teacherLabel = args["label"] as? String
@@ -952,13 +964,21 @@ private final class NativeStartupTimetable: UITableViewController, UISearchBarDe
     if #available(iOS 26.0, *) { saveSymbol = "checkmark" } else { saveSymbol = "checkmark.circle" }
     navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: saveSymbol), style: .done, target: self, action: #selector(save))
     navigationItem.rightBarButtonItem?.accessibilityLabel = "저장"
-    search.delegate = self; search.placeholder = "선생님 이름 검색"; search.searchBarStyle = .minimal
+    search.delegate = self; search.placeholder = "선생님 이름 검색"
+    search.font = .preferredFont(forTextStyle: .body)
+    search.adjustsFontForContentSizeCategory = true
+    search.returnKeyType = .done
+    search.addTarget(self, action: #selector(searchChanged), for: .editingChanged)
     updateSaveButton()
   }
   func updateSaveButton() {
     navigationItem.rightBarButtonItem?.isEnabled = mode != "teachers" || teachers.contains { $0["id"] == teacher }
   }
-  func searchBar(_ searchBar: UISearchBar, textDidChange query: String) {
+  func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+    textField.resignFirstResponder(); return true
+  }
+  @objc func searchChanged() {
+    let query = search.text ?? ""
     let filtered = teachers.filter { query.isEmpty || (($0["label"] ?? "") + ($0["subjects"] ?? "")).localizedCaseInsensitiveContains(query) }
     let previousIDs = Set(visible.compactMap { $0["id"] })
     let nextIDs = Set(filtered.compactMap { $0["id"] })
@@ -973,10 +993,10 @@ private final class NativeStartupTimetable: UITableViewController, UISearchBarDe
     }
   }
   override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-    section == 1 ? search : nil
+    section == 1 ? searchHeader : nil
   }
   override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-    section == 1 ? 56 : UITableView.automaticDimension
+    section == 1 ? 68 : UITableView.automaticDimension
   }
   @objc func cancel() { dismiss(animated: true) { self.finish(nil) } }
   @objc func save() {
@@ -1016,7 +1036,8 @@ private final class NativeStartupTimetable: UITableViewController, UISearchBarDe
       if !hasTeachers { search.resignFirstResponder() }
       tableView.performBatchUpdates {
         if hasTeachers { tableView.insertSections(IndexSet(integer: 1), with: .top) }
-        else { tableView.deleteSections(IndexSet(integer: 1), with: .top) }
+        // Fading in place avoids all rows sliding over one another on removal.
+        else { tableView.deleteSections(IndexSet(integer: 1), with: .fade) }
       }
     }
   }
