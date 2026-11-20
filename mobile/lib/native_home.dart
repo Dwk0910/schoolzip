@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:ui' as ui;
+
+import 'empty_meal_illustration.dart';
 
 import 'package:flutter/services.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
@@ -33,13 +36,30 @@ class NativeHomeBridge {
     WidgetsBinding.instance.addPostFrameCallback((_) => send(page));
   }
 
+  late final Future<String> emptyMealArtwork = renderEmptyMeal();
+  Future<String> renderEmptyMeal() async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder)..scale(3);
+    const EmptyMealIllustration().paint(canvas, const Size(208, 128));
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(624, 384);
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    picture.dispose();
+    return base64Encode(data!.buffer.asUint8List());
+  }
+
   Future<void> send(String page) async {
+    if (page == 'meals') await emptyMealArtwork;
     final model = models[page];
     if (model == null) return;
     try {
       await channel.invokeMethod<void>('update', {
         'page': page,
-        'model': model,
+        'model': {
+          ...model,
+          if (page == 'meals') 'emptyIllustration': await emptyMealArtwork,
+        },
       });
     } on MissingPluginException {
       /* The native host will request the latest models. */

@@ -34,3 +34,10 @@ Do not synchronize a second Flutter scroll position with the native title or put
 empty native controllers in front of Flutter tab bodies: both approaches separate
 the title/transition from the visible content. Native scroll and selector UI
 regression checks are documented in [test_support](test_support/README.md).
+
+The timetable and meal table cells use plain containers with explicit content
+margins. Do not wrap the complete page in one rounded inset-grouped cell: its
+corner mask clips the school subtitle. Weekly grids are normal views; only
+class overview grids use a horizontal scroll view, which rejects vertical pans.
+The empty-meal artwork is rendered from the original `EmptyMealIllustration`
+painter and shared with UIKit; retain the existing compact date control.

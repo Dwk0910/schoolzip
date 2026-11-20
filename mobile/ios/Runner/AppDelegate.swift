@@ -593,7 +593,7 @@ private final class SchoolContentTable: UITableViewController {
   private weak var gridScroll: UIScrollView?
   init(page: String, title: String, channel: FlutterMethodChannel) {
     self.page = page; self.channel = channel
-    super.init(style: .insetGrouped)
+    super.init(style: .plain)
     self.title = title
     week.addTarget(self, action: #selector(weekChanged), for: .valueChanged)
     if page == "timetable" {
@@ -607,7 +607,7 @@ private final class SchoolContentTable: UITableViewController {
     tableView.separatorStyle = .none
     tableView.rowHeight = UITableView.automaticDimension
     tableView.estimatedRowHeight = 400
-    tableView.alwaysBounceVertical = false
+    tableView.alwaysBounceVertical = true
     tableView.contentInset.bottom = 12
     tableView.sectionHeaderHeight = 0
     tableView.sectionFooterHeight = 0
@@ -632,7 +632,13 @@ private final class SchoolContentTable: UITableViewController {
     let content = stack(spacing: 12)
     content.addArrangedSubview(label(model["subtitle"] as? String ?? "", size: 17, color: .secondaryLabel))
     if page == "timetable" { addTimetable(to: content) } else { addMeals(to: content) }
-    pin(content, to: cell.contentView)
+    cell.contentView.addSubview(content); content.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      content.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 20),
+      content.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -20),
+      content.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 6),
+      content.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -12),
+    ])
     return cell
   }
   private func stack(axis: NSLayoutConstraint.Axis = .vertical, spacing: CGFloat = 0) -> UIStackView {
@@ -780,7 +786,9 @@ private final class SchoolContentTable: UITableViewController {
       }
       table.addArrangedSubview(row)
     }
-    let horizontal = UIScrollView()
+    // Weekly grids have no nested scroll view; the table owns every vertical drag.
+    guard model["horizontal"] as? Bool == true else { return all }
+    let horizontal = HorizontalTimetableScroll()
     horizontal.alwaysBounceHorizontal = false
     horizontal.showsVerticalScrollIndicator = false
     horizontal.contentInsetAdjustmentBehavior = .never
@@ -799,18 +807,33 @@ private final class SchoolContentTable: UITableViewController {
     return horizontal
   }
   private func addMeals(to content: UIStackView) {
-    let dateRow = stack(axis: .horizontal, spacing: 8)
-    let previous = button("‹", action: "previous")
-    previous.widthAnchor.constraint(equalToConstant: 44).isActive = true
-    previous.accessibilityLabel = "이전 날짜"
+    let dateRow = stack(axis: .horizontal)
+    dateRow.backgroundColor = .tertiarySystemFill
+    dateRow.layer.cornerRadius = 16
+    func dateButton(_ title: String, action: String, arrow: Bool = false) -> UIButton {
+      let button = UIButton(type: .system)
+      if arrow {
+        button.setImage(UIImage(systemName: title, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17)), for: .normal)
+        button.tintColor = .secondaryLabel
+        button.widthAnchor.constraint(equalToConstant: 44).isActive = true
+      } else {
+        button.setTitle(title, for: .normal); button.setTitleColor(.label, for: .normal)
+        button.titleLabel?.font = UIFontMetrics.default.scaledFont(for: .systemFont(ofSize: 16, weight: .semibold))
+        button.contentEdgeInsets = UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
+        button.accessibilityIdentifier = "meal-date"
+      }
+      button.addAction(UIAction { [weak self] _ in self?.emit(action) }, for: .touchUpInside)
+      button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+      return button
+    }
+    let previous = dateButton("chevron.left", action: "previous", arrow: true); previous.accessibilityLabel = "이전 날짜"
+    let next = dateButton("chevron.right", action: "next", arrow: true); next.accessibilityLabel = "다음 날짜"
     dateRow.addArrangedSubview(previous)
-    let date = button(model["date"] as? String ?? "날짜 선택", action: "date")
-    dateRow.addArrangedSubview(date)
-    let next = button("›", action: "next")
-    next.widthAnchor.constraint(equalToConstant: 44).isActive = true
-    next.accessibilityLabel = "다음 날짜"
+    dateRow.addArrangedSubview(dateButton(model["date"] as? String ?? "날짜 선택", action: "date"))
     dateRow.addArrangedSubview(next)
-    content.addArrangedSubview(dateRow)
+    let dateContainer = UIView(); dateContainer.addSubview(dateRow); dateRow.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([dateRow.centerXAnchor.constraint(equalTo: dateContainer.centerXAnchor), dateRow.topAnchor.constraint(equalTo: dateContainer.topAnchor), dateRow.bottomAnchor.constraint(equalTo: dateContainer.bottomAnchor), dateRow.widthAnchor.constraint(lessThanOrEqualTo: dateContainer.widthAnchor)])
+    content.addArrangedSubview(dateContainer)
     switch model["status"] as? String {
     case "ready":
       for meal in model["meals"] as? [[String:Any]] ?? [] {
@@ -832,10 +855,33 @@ private final class SchoolContentTable: UITableViewController {
         let card = UIView(); card.backgroundColor = .secondarySystemGroupedBackground; card.layer.cornerRadius = 18
         pin(body, to: card, inset: 14); content.addArrangedSubview(card)
       }
-    case "empty": content.addArrangedSubview(result("등록된 급식이 없습니다", detail: "다른 날짜의 식단을 확인해 주세요.", symbol: "fork.knife.circle"))
+    case "empty":
+      let body = stack(spacing: 16)
+      if let encoded = model["emptyIllustration"] as? String, let data = Data(base64Encoded: encoded), let image = UIImage(data: data) {
+        let artwork = UIImageView(image: image); artwork.contentMode = .scaleAspectFit
+        artwork.accessibilityIdentifier = "empty-meal-illustration"; artwork.isAccessibilityElement = true; artwork.accessibilityLabel = "빈 식판 일러스트"
+        artwork.heightAnchor.constraint(equalToConstant: 128).isActive = true
+        body.addArrangedSubview(artwork)
+      }
+      body.addArrangedSubview(label("등록된 급식이 없습니다", size: 21, weight: .bold, centered: true))
+      body.addArrangedSubview(label("다른 날짜의 식단을 확인해 주세요.", size: 17, color: .secondaryLabel, centered: true))
+      let box = UIView(); box.addSubview(body); body.translatesAutoresizingMaskIntoConstraints = false
+      NSLayoutConstraint.activate([body.topAnchor.constraint(equalTo: box.topAnchor, constant: 44), body.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -44), body.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 16), body.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -16)])
+      content.addArrangedSubview(box)
     case "error": content.addArrangedSubview(result("급식을 불러오지 못했어요", detail: "잠시 후 다시 시도해 주세요.", symbol: "exclamationmark.circle")); content.addArrangedSubview(button("다시 시도", action: "retry"))
     default: content.addArrangedSubview(loading())
     }
     if model["showToday"] as? Bool == true { content.addArrangedSubview(button("오늘로 돌아가기", action: "today")) }
+  }
+}
+
+// Reject vertical pans before recognition so the enclosing table receives them.
+private final class HorizontalTimetableScroll: UIScrollView {
+  override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if gestureRecognizer === panGestureRecognizer {
+      let velocity = panGestureRecognizer.velocity(in: self)
+      if abs(velocity.y) >= abs(velocity.x) { return false }
+    }
+    return super.gestureRecognizerShouldBegin(gestureRecognizer)
   }
 }
