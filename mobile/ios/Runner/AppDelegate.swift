@@ -1015,8 +1015,8 @@ private final class NativeStartupTimetable: UITableViewController, UISearchBarDe
     if hadTeachers != hasTeachers {
       if !hasTeachers { search.resignFirstResponder() }
       tableView.performBatchUpdates {
-        if hasTeachers { tableView.insertSections(IndexSet(integer: 1), with: .automatic) }
-        else { tableView.deleteSections(IndexSet(integer: 1), with: .automatic) }
+        if hasTeachers { tableView.insertSections(IndexSet(integer: 1), with: .top) }
+        else { tableView.deleteSections(IndexSet(integer: 1), with: .top) }
       }
     }
   }
