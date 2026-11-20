@@ -1540,11 +1540,8 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
       bottom: false,
       child: LargeTitleScroll(
         title: '주간 시간표',
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: widget.changeSchool,
-          child: const Text('학교 바꾸기', style: TextStyle(fontSize: 14)),
-        ),
+        actionLabel: '학교 바꾸기',
+        onAction: widget.changeSchool,
         padding: EdgeInsets.fromLTRB(
           20,
           6,

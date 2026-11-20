@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart' show PlatformViewHitTestBehavior;
 
 import 'dart:io';
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/services.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
@@ -680,171 +680,120 @@ class _NativeWeekControlState extends State<_NativeWeekControl> {
   );
 }
 
-class LargeTitleScroll extends StatelessWidget {
+class LargeTitleScroll extends StatefulWidget {
   final String title;
-  final Widget? trailing;
+  final String? actionLabel;
+  final VoidCallback? onAction;
   final EdgeInsets padding;
   final List<Widget> children;
   const LargeTitleScroll({
     super.key,
     required this.title,
-    this.trailing,
+    this.actionLabel,
+    this.onAction,
     required this.padding,
     required this.children,
   });
   @override
-  Widget build(BuildContext context) => CustomScrollView(
-    slivers: [
-      SliverPersistentHeader(
-        pinned: true,
-        delegate: _PageTitleHeader(
-          title: title,
-          trailing: trailing,
-          topInset: MediaQuery.paddingOf(context).top,
-          horizontalPadding: padding,
-          largeTitleHeight: MediaQuery.textScalerOf(context).scale(34) + 18,
-        ),
-      ),
-      SliverSafeArea(
-        top: false,
-        bottom: false,
-        sliver: SliverPadding(
-          padding: padding,
-          sliver: SliverList.list(children: children),
-        ),
-      ),
-    ],
-  );
+  State<LargeTitleScroll> createState() => _LargeTitleScrollState();
 }
 
-class _PageTitleHeader extends SliverPersistentHeaderDelegate {
-  final String title;
-  final Widget? trailing;
-  final double topInset;
-  final EdgeInsets horizontalPadding;
-  final double largeTitleHeight;
-  const _PageTitleHeader({
-    required this.title,
-    required this.trailing,
-    required this.topInset,
-    required this.horizontalPadding,
-    required this.largeTitleHeight,
-  });
+class _LargeTitleScrollState extends State<LargeTitleScroll> {
+  final scroll = ScrollController();
+  MethodChannel? channel;
+  double? nativeHeaderHeight;
 
   @override
-  double get minExtent => topInset + 44;
-  @override
-  double get maxExtent => minExtent + largeTitleHeight;
+  void initState() {
+    super.initState();
+    scroll.addListener(syncScroll);
+  }
 
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    final collapsed = (shrinkOffset / largeTitleHeight).clamp(0.0, 1.0);
-    final background = CupertinoTheme.of(context).scaffoldBackgroundColor;
-    return Stack(
-      fit: StackFit.expand,
-      clipBehavior: Clip.none,
-      children: [
-        // Fade the *filtered layer*, not the content, at the scroll edge.
-        // Keep the title/actions above this layer so they stay sharp.
-        Positioned.fill(
-          bottom: -18,
-          child: IgnorePointer(
-            child: ClipRect(
-              child: ShaderMask(
-                blendMode: BlendMode.dstIn,
-                shaderCallback: (bounds) => const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0xffffffff),
-                    Color(0xffffffff),
-                    Color(0x00ffffff),
-                  ],
-                  stops: [0, .55, 1],
-                ).createShader(bounds),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                  blendMode: BlendMode.src,
-                  child: ColoredBox(color: background.withValues(alpha: .8)),
-                ),
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          top: topInset,
-          left: 0,
-          right: 0,
-          height: 44,
-          child: MediaQuery.removePadding(
-            context: context,
-            removeTop: true,
-            child: CupertinoNavigationBar(
-              middle: collapsed <= .45
-                  ? const SizedBox.shrink()
-                  : Opacity(
-                      opacity: ((collapsed - .45) / .55).clamp(0.0, 1.0),
-                      child: Text(title),
-                    ),
-              trailing: trailing,
-              automaticallyImplyLeading: false,
-              transitionBetweenRoutes: false,
-              backgroundColor: const Color(0x00000000),
-              border: null,
-              automaticBackgroundVisibility: false,
-              enableBackgroundFilterBlur: false,
-              padding: EdgeInsetsDirectional.only(
-                start: horizontalPadding.left,
-                end: horizontalPadding.right,
-              ),
-            ),
-          ),
-        ),
-        if (collapsed < 2 / 3)
-          Positioned(
-            top: minExtent,
-            left: horizontalPadding.left,
-            right: horizontalPadding.right,
-            height: (largeTitleHeight - shrinkOffset).clamp(
-              0.0,
-              largeTitleHeight,
-            ),
-            child: ClipRect(
-              child: OverflowBox(
-                alignment: Alignment.bottomLeft,
-                minHeight: largeTitleHeight,
-                maxHeight: largeTitleHeight,
-                child: Align(
-                  alignment: Alignment.bottomLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Opacity(
-                      opacity: (1 - collapsed * 1.5).clamp(0.0, 1.0),
-                      child: Text(
-                        title,
-                        style: CupertinoTheme.of(context)
-                            .textTheme
-                            .navLargeTitleTextStyle,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
+  void syncScroll() {
+    channel?.invokeMethod<void>(
+      'scroll',
+      scroll.hasClients ? scroll.offset : 0.0,
     );
   }
 
   @override
-  bool shouldRebuild(_PageTitleHeader old) =>
-      title != old.title ||
-      trailing != old.trailing ||
-      topInset != old.topInset ||
-      horizontalPadding != old.horizontalPadding ||
-      largeTitleHeight != old.largeTitleHeight;
+  void dispose() {
+    channel?.setMethodCallHandler(null);
+    scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final native = Platform.isIOS;
+    final headerHeight =
+        nativeHeaderHeight ?? MediaQuery.paddingOf(context).top + 96;
+    final body = CustomScrollView(
+      controller: scroll,
+      slivers: [
+        if (native)
+          SliverToBoxAdapter(child: SizedBox(height: headerHeight))
+        else
+          CupertinoSliverNavigationBar(
+            largeTitle: Text(widget.title),
+            trailing: widget.onAction == null
+                ? null
+                : CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: widget.onAction,
+                    child: Text(widget.actionLabel!),
+                  ),
+            automaticallyImplyLeading: false,
+            transitionBetweenRoutes: false,
+          ),
+        SliverSafeArea(
+          top: false,
+          bottom: false,
+          sliver: SliverPadding(
+            padding: widget.padding,
+            sliver: SliverList.list(children: widget.children),
+          ),
+        ),
+      ],
+    );
+    if (!native) return body;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        body,
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: headerHeight,
+          child: UiKitView(
+            viewType: 'schoolzip/navigation-header',
+            hitTestBehavior: PlatformViewHitTestBehavior.translucent,
+            creationParams: {
+              'title': widget.title,
+              'action': widget.actionLabel,
+            },
+            creationParamsCodec: const StandardMessageCodec(),
+            onPlatformViewCreated: (id) {
+              if (!mounted) return;
+              final bridge = MethodChannel('schoolzip/navigation-header/$id');
+              channel = bridge;
+              bridge.setMethodCallHandler((call) async {
+                if (!mounted) return;
+                if (call.method == 'action') widget.onAction?.call();
+                if (call.method == 'height') {
+                  final height = (call.arguments as num).toDouble();
+                  if (height > 0 && nativeHeaderHeight != height) {
+                    setState(() => nativeHeaderHeight = height);
+                  }
+                }
+                if (call.method == 'ready') syncScroll();
+              });
+              syncScroll();
+            },
+          ),
+        ),
+      ],
+    );
+  }
 }

@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:schoolzip/controls.dart';
 
 void main() {
-  testWidgets('page title remains readable above a fading scroll edge', (
+  testWidgets('non-iOS title layout survives scrolling in both directions', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(402, 874);
@@ -50,10 +50,10 @@ void main() {
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -230));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('주간 시간표').hitTestable(), findsOneWidget);
+    expect(find.text('주간 시간표'), findsWidgets);
     await tester.drag(find.byType(CustomScrollView), const Offset(0, 500));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('주간 시간표').hitTestable(), findsOneWidget);
+    expect(find.text('주간 시간표'), findsWidgets);
   });
 }

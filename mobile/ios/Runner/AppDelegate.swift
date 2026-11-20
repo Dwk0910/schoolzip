@@ -16,6 +16,7 @@ import WidgetKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "SchoolzipTabs") {
       editors = NativeEditors(messenger: registrar.messenger(), presenter: { registrar.viewController })
+      registrar.register(NavigationHeaderFactory(registrar.messenger()), withId: "schoolzip/navigation-header")
       registrar.register(WeekControlFactory(registrar.messenger()), withId: "schoolzip/week")
       registrar.register(SettingsFactory(registrar.messenger()), withId: "schoolzip/settings")
       registrar.register(SchoolTabsFactory(registrar.messenger()), withId: "schoolzip/tabs")
@@ -564,5 +565,119 @@ private final class NativeTeacherReview: UITableViewController, UISearchResultsU
     }
     navigationItem.rightBarButtonItem?.isEnabled = !selected.isEmpty
     tableView.reloadData()
+  }
+}
+
+
+// UIKit owns title collapse, bar buttons and the system scroll-edge material.
+// Flutter only forwards the content scroll distance to this native scroll view.
+private final class NavigationHeaderFactory: NSObject, FlutterPlatformViewFactory {
+  let messenger: FlutterBinaryMessenger
+  init(_ messenger: FlutterBinaryMessenger) { self.messenger = messenger }
+  func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol { FlutterStandardMessageCodec.sharedInstance() }
+  func create(withFrame frame: CGRect, viewIdentifier id: Int64, arguments args: Any?) -> FlutterPlatformView {
+    let values = args as? [String:Any] ?? [:]
+    let channel = FlutterMethodChannel(name: "schoolzip/navigation-header/\(id)", binaryMessenger: messenger)
+    return NavigationHeaderHost(frame: frame, title: values["title"] as? String ?? "", action: values["action"] as? String, channel: channel)
+  }
+}
+
+private final class NavigationScrollPage: UIViewController {
+  let scrollView = UIScrollView()
+  var onLayout: (() -> Void)?
+  override func loadView() {
+    view = scrollView
+    scrollView.backgroundColor = .clear
+    scrollView.showsVerticalScrollIndicator = false
+    scrollView.showsHorizontalScrollIndicator = false
+    scrollView.isUserInteractionEnabled = false
+    scrollView.contentInsetAdjustmentBehavior = .always
+    if #available(iOS 15.0, *) { setContentScrollView(scrollView, for: .top) }
+  }
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    scrollView.contentSize = CGSize(width: view.bounds.width, height: 100000)
+    onLayout?()
+  }
+}
+
+private final class NavigationHeaderHost: UIView, FlutterPlatformView {
+  private let page = NavigationScrollPage()
+  private let navigation: UINavigationController
+  private let channel: FlutterMethodChannel
+  private var expandedInset: CGFloat?
+  private var requestedOffset: CGFloat = 0
+  private var applyingScroll = false
+  init(frame: CGRect, title: String, action: String?, channel: FlutterMethodChannel) {
+    navigation = UINavigationController(rootViewController: page)
+    self.channel = channel
+    super.init(frame: frame)
+    backgroundColor = .clear
+    page.title = title
+    page.navigationItem.largeTitleDisplayMode = .always
+    navigation.navigationBar.prefersLargeTitles = true
+    navigation.navigationBar.tintColor = .systemIndigo
+    if let action = action {
+      page.navigationItem.rightBarButtonItem = UIBarButtonItem(title: action, style: .plain, target: self, action: #selector(tapped))
+    }
+    navigation.view.backgroundColor = .clear
+    navigation.view.frame = bounds
+    navigation.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    addSubview(navigation.view)
+    page.onLayout = { [weak self] in self?.synchronizeScroll() }
+    channel.setMethodCallHandler { [weak self] call, reply in
+      guard let self = self, call.method == "scroll", let offset = call.arguments as? NSNumber else {
+        reply(FlutterMethodNotImplemented); return
+      }
+      self.requestedOffset = CGFloat(truncating: offset)
+      self.synchronizeScroll()
+      reply(nil)
+    }
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
+  deinit { channel.setMethodCallHandler(nil) }
+  func view() -> UIView { self }
+  @objc private func tapped() { channel.invokeMethod("action", arguments: nil) }
+  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    let barPoint = navigation.navigationBar.convert(point, from: self)
+    // The transparent area below a collapsed bar must not swallow content taps.
+    guard navigation.navigationBar.bounds.contains(barPoint) else { return nil }
+    return super.hitTest(point, with: event)
+  }
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil {
+      navigation.willMove(toParent: nil)
+      navigation.removeFromParent()
+    } else if navigation.parent == nil {
+      var ancestor: UIResponder? = next
+      while let responder = ancestor {
+        if let parent = responder as? UIViewController {
+          parent.addChild(navigation)
+          navigation.didMove(toParent: parent)
+          navigation.view.setNeedsLayout()
+          navigation.view.layoutIfNeeded()
+          synchronizeScroll()
+          channel.invokeMethod("ready", arguments: nil)
+          break
+        }
+        ancestor = responder.next
+      }
+    }
+  }
+  private func synchronizeScroll() {
+    guard window != nil, navigation.parent != nil, !applyingScroll else { return }
+    applyingScroll = true
+    defer { applyingScroll = false }
+    if expandedInset == nil {
+      let height = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: self).maxY
+      guard height > 44 else { return }
+      expandedInset = page.scrollView.adjustedContentInset.top
+      channel.invokeMethod("height", arguments: height)
+    }
+    let offset = requestedOffset - (expandedInset ?? 0)
+    if abs(page.scrollView.contentOffset.y - offset) > 0.1 {
+      page.scrollView.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+    }
   }
 }
