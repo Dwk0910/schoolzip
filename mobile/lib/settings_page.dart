@@ -1,3 +1,5 @@
+import 'startup_timetable.dart';
+
 import 'dart:io';
 
 import 'native_home.dart';
@@ -11,10 +13,12 @@ class SettingsPage extends StatefulWidget {
   final int allergyCount;
   final bool teachers, highlight;
   final void Function(String, bool) onDisplay;
-  final VoidCallback? onStartup;
+  final Future<void> Function()? onStartup;
+  final String schoolCode;
   final VoidCallback onSchool, onTeachers, onReset, onGuide;
   const SettingsPage({
     this.onStartup,
+    this.schoolCode = '',
     required this.onAllergies,
     required this.allergyCount,
     super.key,
@@ -34,7 +38,34 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   MethodChannel? channel;
+  String startupLabel = '요일별 보기';
+  @override
+  void initState() {
+    super.initState();
+    refreshStartup();
+  }
+
+  @override
+  void didUpdateWidget(covariant SettingsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.schoolCode != widget.schoolCode) refreshStartup();
+  }
+
+  Future<void> refreshStartup() async {
+    final code = widget.schoolCode;
+    final saved = await StartupTimetable.read(code);
+    if (mounted && code == widget.schoolCode) {
+      setState(() => startupLabel = saved.mode.label);
+    }
+  }
+
+  Future<void> openStartup() async {
+    await widget.onStartup?.call();
+    if (mounted) await refreshStartup();
+  }
+
   Map<String, String> get selection => {
+    'startup': startupLabel,
     'school': widget.school,
     'room': widget.room,
     'allergyCount': widget.allergyCount.toString(),
@@ -61,7 +92,7 @@ class _SettingsPageState extends State<SettingsPage> {
               widget.onDisplay(call.method, call.arguments as bool);
               break;
             case 'startup':
-              widget.onStartup?.call();
+              await openStartup();
               break;
             case 'school':
               widget.onSchool();
@@ -228,7 +259,8 @@ class _SettingsPageState extends State<SettingsPage> {
                           padding: rowPadding,
                           title: const Text('앱 시작 시 시간표'),
                           trailing: const CupertinoListTileChevron(),
-                          onTap: widget.onStartup,
+                          additionalInfo: Text(startupLabel),
+                          onTap: openStartup,
                         ),
                         CupertinoListTile(
                           padding: rowPadding,

@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+import 'package:schoolzip/startup_timetable.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:schoolzip/native_home.dart';
 import 'package:schoolzip/meals.dart';
@@ -89,6 +91,23 @@ class _SmokeState extends State<Smoke> {
           onDisplay: (_, _) {},
           room: '1학년 7반',
           onSchool: () {},
+          schoolCode: 'ui-startup',
+          onStartup: () async {
+            final saved = await StartupTimetable.read('ui-startup');
+            final result = await const MethodChannel('schoolzip/editors')
+                .invokeMapMethod<String, dynamic>('startupTimetable', {
+                  'mode': saved.mode.name,
+                  'teacher': saved.teacher,
+                  'label': saved.label,
+                  'teachers': [
+                    {'id': 'A', 'label': '김가람', 'subjects': '국어'},
+                    {'id': 'B', 'label': '이가람', 'subjects': '수학'},
+                  ],
+                });
+            if (result != null) {
+              await StartupTimetable.fromJson(result).save('ui-startup');
+            }
+          },
           onTeachers: () {},
           onReset: () {},
           onGuide: () {},

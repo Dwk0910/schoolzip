@@ -372,7 +372,10 @@ class _SchoolHomeState extends State<SchoolHome> {
                   teachers: teachers,
                   highlight: highlight,
                   onDisplay: changeDisplay,
-                  onStartup: () => weeklyKey.currentState?.editStartup(),
+                  schoolCode: school!['code'].toString(),
+                  onStartup: () async {
+                    await weeklyKey.currentState?.editStartup();
+                  },
                   school: school!['name'],
                   room: preferred?['code'] == school!['code']
                       ? "${preferred!['grade']}학년 ${preferred!['room']}반"

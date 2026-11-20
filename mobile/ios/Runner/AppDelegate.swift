@@ -158,6 +158,7 @@ private final class SettingsTable: UITableViewController {
           }
         }
         var rows: [IndexPath] = []
+        if previous["startup"] != selection["startup"] { rows.append(IndexPath(row: 2, section: 1)) }
         if previous["school"] != selection["school"] || previous["room"] != selection["room"] { rows.append(IndexPath(row: 0, section: 0)) }
         if previous["allergyCount"] != selection["allergyCount"] { rows.append(IndexPath(row: 0, section: 2)) }
         if !rows.isEmpty { self.tableView.reloadRows(at: rows, with: .none) }
@@ -178,14 +179,16 @@ private final class SettingsTable: UITableViewController {
   override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 1 ? 4 : section == 3 ? 2 : 1 }
   override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { headers[section] }
   override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-    let cell = UITableViewCell(style: indexPath.section == 0 ? .value1 : .default, reuseIdentifier: nil)
+    let cell = UITableViewCell(style: indexPath.section == 0 || (indexPath.section == 1 && indexPath.row == 2) ? .value1 : .default, reuseIdentifier: nil)
     var content = cell.defaultContentConfiguration()
     switch indexPath.section {
     case 0:
       content.text = "학교 바꾸기"
       content.secondaryText = [selection["school"], selection["room"]].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
       content.secondaryTextProperties.color = .secondaryLabel
-    case 1: content.text = ["선생님 이름 표시","오늘 열 강조","앱 시작 시 시간표","선생님 이름 설정"][indexPath.row]
+    case 1:
+      content.text = ["선생님 이름 표시","오늘 열 강조","앱 시작 시 시간표","선생님 이름 설정"][indexPath.row]
+      if indexPath.row == 2 { content.secondaryText = selection["startup"] ?? "요일별 보기"; content.secondaryTextProperties.color = .secondaryLabel }
     case 2:
       content.text = "내 알레르기"
       let count = selection["allergyCount"] ?? "0"
@@ -926,7 +929,7 @@ private final class HorizontalTimetableScroll: UIScrollView {
   }
 }
 
-private final class NativeStartupTimetable: UITableViewController, UISearchResultsUpdating {
+private final class NativeStartupTimetable: UITableViewController, UISearchBarDelegate {
   let finish: FlutterResult
   let teachers: [[String: String]]
   let modes = ["mine", "classes", "teachers"]
@@ -935,7 +938,7 @@ private final class NativeStartupTimetable: UITableViewController, UISearchResul
   var teacher: String?
   var teacherLabel: String?
   var visible: [[String: String]] = []
-  let search = UISearchController(searchResultsController: nil)
+  let search = UISearchBar()
   init(args: [String: Any], finish: @escaping FlutterResult) {
     self.finish = finish; teachers = args["teachers"] as? [[String: String]] ?? []
     mode = args["mode"] as? String ?? "mine"; teacher = args["teacher"] as? String; teacherLabel = args["label"] as? String
@@ -945,19 +948,35 @@ private final class NativeStartupTimetable: UITableViewController, UISearchResul
   override func viewDidLoad() {
     super.viewDidLoad()
     navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancel))
-    navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .save, target: self, action: #selector(save))
-    search.searchResultsUpdater = self; search.obscuresBackgroundDuringPresentation = false; search.searchBar.placeholder = "선생님 이름 검색"
-    refresh()
+    let saveSymbol: String
+    if #available(iOS 26.0, *) { saveSymbol = "checkmark" } else { saveSymbol = "checkmark.circle" }
+    navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: saveSymbol), style: .done, target: self, action: #selector(save))
+    navigationItem.rightBarButtonItem?.accessibilityLabel = "저장"
+    search.delegate = self; search.placeholder = "선생님 이름 검색"; search.searchBarStyle = .minimal
+    updateSaveButton()
   }
-  func refresh() {
-    navigationItem.searchController = mode == "teachers" ? search : nil
+  func updateSaveButton() {
     navigationItem.rightBarButtonItem?.isEnabled = mode != "teachers" || teachers.contains { $0["id"] == teacher }
-    tableView.reloadData()
   }
-  func updateSearchResults(for searchController: UISearchController) {
-    let query = searchController.searchBar.text ?? ""
-    visible = teachers.filter { query.isEmpty || (($0["label"] ?? "") + ($0["subjects"] ?? "")).localizedCaseInsensitiveContains(query) }
-    tableView.reloadData()
+  func searchBar(_ searchBar: UISearchBar, textDidChange query: String) {
+    let filtered = teachers.filter { query.isEmpty || (($0["label"] ?? "") + ($0["subjects"] ?? "")).localizedCaseInsensitiveContains(query) }
+    let previousIDs = Set(visible.compactMap { $0["id"] })
+    let nextIDs = Set(filtered.compactMap { $0["id"] })
+    let removed = visible.indices.filter { !nextIDs.contains(visible[$0]["id"] ?? "") }.map { IndexPath(row: $0, section: 1) }
+    let added = filtered.indices.filter { !previousIDs.contains(filtered[$0]["id"] ?? "") }.map { IndexPath(row: $0, section: 1) }
+    visible = filtered
+    guard mode == "teachers" else { return }
+    // Keep the search field and keyboard alive while filtering only the rows.
+    tableView.performBatchUpdates {
+      tableView.deleteRows(at: removed, with: .automatic)
+      tableView.insertRows(at: added, with: .automatic)
+    }
+  }
+  override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+    section == 1 ? search : nil
+  }
+  override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+    section == 1 ? 56 : UITableView.automaticDimension
   }
   @objc func cancel() { dismiss(animated: true) { self.finish(nil) } }
   @objc func save() {
@@ -982,8 +1001,23 @@ private final class NativeStartupTimetable: UITableViewController, UISearchResul
   }
   override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     tableView.deselectRow(at: indexPath, animated: true)
+    let hadTeachers = mode == "teachers"
     if indexPath.section == 0 { mode = modes[indexPath.row] }
     else { teacher = visible[indexPath.row]["id"]; teacherLabel = visible[indexPath.row]["label"] }
-    refresh()
+    // Preserve the tapped cell so UIKit can finish its selection animation.
+    for path in tableView.indexPathsForVisibleRows ?? [] {
+      guard let cell = tableView.cellForRow(at: path) else { continue }
+      let checked = path.section == 0 ? mode == modes[path.row] : visible[path.row]["id"] == teacher
+      cell.accessoryType = checked ? .checkmark : .none
+    }
+    updateSaveButton()
+    let hasTeachers = mode == "teachers"
+    if hadTeachers != hasTeachers {
+      if !hasTeachers { search.resignFirstResponder() }
+      tableView.performBatchUpdates {
+        if hasTeachers { tableView.insertSections(IndexSet(integer: 1), with: .automatic) }
+        else { tableView.deleteSections(IndexSet(integer: 1), with: .automatic) }
+      }
+    }
   }
 }

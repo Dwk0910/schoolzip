@@ -1,5 +1,32 @@
 import XCTest
 final class ScrollTests: XCTestCase {
+  func testStartupModeSelection() throws {
+    let app = XCUIApplication(bundleIdentifier: "app.schoolzip.schoolzip")
+    app.launch()
+    XCTAssertTrue(app.staticTexts["주간 시간표"].firstMatch.waitForExistence(timeout: 15))
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.71, dy: 0.94)).tap()
+    let row = app.cells.containing(.staticText, identifier: "앱 시작 시 시간표").firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
+    let teacherMode = app.staticTexts["선생님별 보기"].firstMatch
+    XCTAssertTrue(teacherMode.waitForExistence(timeout: 5))
+    app.staticTexts["요일별 보기"].firstMatch.tap()
+    teacherMode.tap()
+    let teacher = app.staticTexts["이가람 선생님"].firstMatch
+    XCTAssertTrue(teacher.waitForExistence(timeout: 5)); teacher.tap()
+    let selected = XCTAttachment(screenshot: app.screenshot()); selected.name = "startup-teacher-selected"; selected.lifetime = .keepAlways; add(selected)
+    app.staticTexts["학급별 보기"].firstMatch.tap()
+    XCTAssertFalse(teacher.exists)
+    teacherMode.tap()
+    XCTAssertTrue(teacher.waitForExistence(timeout: 5))
+    let save = app.buttons["저장"].firstMatch
+    XCTAssertTrue(save.isEnabled); save.tap()
+    XCTAssertTrue(row.waitForExistence(timeout: 5))
+    XCTAssertTrue(row.staticTexts["선생님별 보기"].waitForExistence(timeout: 5))
+    let summary = XCTAttachment(screenshot: app.screenshot()); summary.name = "startup-settings-summary"; summary.lifetime = .keepAlways; add(summary)
+    row.tap()
+    XCTAssertTrue(app.staticTexts["이가람 선생님"].firstMatch.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["저장"].firstMatch.isEnabled)
+  }
   func testNativeScrollAndTabs() throws {
     let app = XCUIApplication(bundleIdentifier: "app.schoolzip.schoolzip")
     app.launch()
