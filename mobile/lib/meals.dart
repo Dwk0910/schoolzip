@@ -1,6 +1,10 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
 
 import 'controls.dart';
+
+import 'dart:io';
+
+import 'native_home.dart';
 import 'allergies.dart';
 import 'empty_meal_illustration.dart';
 
@@ -82,6 +86,7 @@ class _MealPageState extends State<MealPage> {
   @override
   Widget build(BuildContext context) {
     if (!widget.active && meals == null) return const SizedBox.shrink();
+    if (Platform.isIOS) return nativePage();
     final ink = CupertinoColors.secondaryLabel.resolveFrom(context);
     return CupertinoPageScaffold(
       child: SafeArea(
@@ -252,6 +257,68 @@ class _MealPageState extends State<MealPage> {
       ),
     );
   }
+
+  Widget nativePage() => FutureBuilder<dynamic>(
+    future: meals,
+    builder: (context, snapshot) {
+      final rows = snapshot.data as List? ?? [];
+      return NativePageModel(
+        page: 'meals',
+        model: {
+          'subtitle': widget.school['name'],
+          'date': '${day.month}월 ${day.day}일 (${"월화수목금토일"[day.weekday - 1]})',
+          'showToday': day != today(),
+          'status': snapshot.connectionState != ConnectionState.done
+              ? 'loading'
+              : snapshot.hasError
+              ? 'error'
+              : rows.isEmpty
+              ? 'empty'
+              : 'ready',
+          'meals': [
+            for (final meal in rows)
+              {
+                'type': meal['type'],
+                'calories': meal['calories'],
+                'dishes': [
+                  for (final raw in meal['dishes'])
+                    (() {
+                      final dish = parseDish(raw);
+                      final matches = dish.codes
+                          .where(widget.allergies.contains)
+                          .toList();
+                      return {
+                        'name': dish.name,
+                        'warning': matches.isEmpty
+                            ? ''
+                            : '내 알레르기 · ${matches.map(allergenLabel).join(' · ')}',
+                        'allergens': dish.codes
+                            .where((c) => !widget.allergies.contains(c))
+                            .map(allergenLabel)
+                            .join(' · '),
+                      };
+                    })(),
+                ],
+              },
+          ],
+        },
+        onAction: (action, _) {
+          switch (action) {
+            case 'date':
+              pick();
+            case 'previous':
+              select(DateTime(day.year, day.month, day.day - 1));
+            case 'next':
+              select(DateTime(day.year, day.month, day.day + 1));
+            case 'today':
+              select(today());
+            case 'retry':
+              select(day);
+          }
+        },
+      );
+    },
+  );
 }
 
 class _DishRow extends StatelessWidget {

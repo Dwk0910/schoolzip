@@ -1,7 +1,6 @@
-import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
-
 import 'dart:io';
+
+import 'native_home.dart';
 
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/services.dart';
@@ -41,19 +40,8 @@ class _SettingsPageState extends State<SettingsPage> {
     'highlightToday': widget.highlight.toString(),
   };
   @override
-  void didUpdateWidget(SettingsPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.allergyCount != widget.allergyCount ||
-        oldWidget.school != widget.school ||
-        oldWidget.room != widget.room ||
-        oldWidget.teachers != widget.teachers ||
-        oldWidget.highlight != widget.highlight) {
-      channel?.invokeMethod<void>('update', selection);
-    }
-  }
-
-  @override
   void dispose() {
+    if (Platform.isIOS) NativeHomeBridge.instance.ready.remove('settings');
     channel?.setMethodCallHandler(null);
     super.dispose();
   }
@@ -61,44 +49,46 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     if (Platform.isIOS) {
-      return UiKitView(
-        viewType: 'schoolzip/settings',
-        gestureRecognizers: {
-          Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
-        },
-        creationParams: selection,
-        creationParamsCodec: const StandardMessageCodec(),
-        onPlatformViewCreated: (id) {
+      if (channel == null) {
+        channel = const MethodChannel('schoolzip/home/settings');
+        channel!.setMethodCallHandler((call) async {
           if (!mounted) return;
-          final bridge = MethodChannel('schoolzip/settings/$id');
-          channel = bridge;
-          bridge.setMethodCallHandler((call) async {
-            if (!mounted) return;
-            switch (call.method) {
-              case 'showTeachers':
-              case 'highlightToday':
-                widget.onDisplay(call.method, call.arguments as bool);
-                break;
-              case 'school':
-                widget.onSchool();
-                break;
-              case 'teachers':
-                widget.onTeachers();
-                break;
-              case 'allergies':
-                widget.onAllergies();
-                break;
-              case 'guide':
-                widget.onGuide();
-                break;
-              case 'reset':
-                widget.onReset();
-                break;
-            }
-          });
-          bridge.invokeMethod<void>('update', selection);
-        },
-      );
+          switch (call.method) {
+            case 'showTeachers':
+            case 'highlightToday':
+              widget.onDisplay(call.method, call.arguments as bool);
+              break;
+            case 'school':
+              widget.onSchool();
+              break;
+            case 'teachers':
+              widget.onTeachers();
+              break;
+            case 'allergies':
+              widget.onAllergies();
+              break;
+            case 'guide':
+              widget.onGuide();
+              break;
+            case 'reset':
+              widget.onReset();
+              break;
+          }
+        });
+      }
+      void send() async {
+        try {
+          await channel?.invokeMethod<void>('update', selection);
+        } on MissingPluginException {
+          /* Main native tabs will request the model when ready. */
+        }
+      }
+
+      NativeHomeBridge.instance.ready['settings'] = send;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) send();
+      });
+      return const SizedBox.shrink();
     }
     final secondary = CupertinoColors.secondaryLabel.resolveFrom(context);
     Widget section(String title, Widget row) => Padding(

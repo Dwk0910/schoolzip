@@ -395,91 +395,9 @@ class _TimetableOverviewState extends State<TimetableOverview> {
 
   @override
   Widget build(BuildContext context) {
-    final teacherMode = widget.mode == TimetableMode.teachers;
-    final choices = teacherChoices(widget.grades, widget.teacherLabel);
-    final chosen = choices
-        .where((e) => e.id == widget.selectedTeacher)
-        .firstOrNull;
-    final active = widget.selectedTeacher == null
-        ? choices.firstOrNull
-        : chosen;
-    final day = (widget.selectedDay ?? 0).clamp(0, 6);
-    final rooms =
-        (widget.grades[widget.grade] as Map).keys
-            .map((e) => e.toString())
-            .toList()
-          ..sort(naturalOrder);
-    final entries = teacherMode
-        ? active?.lessons ?? <SchoolLesson>[]
-        : schoolLessons(widget.grades)
-              .where((e) => e.grade == widget.grade && e.day == day)
-              .toList();
-    final count = teacherMode
-        ? entries
-              .fold<int>(5, (n, e) => e.day + 1 > n ? e.day + 1 : n)
-              .clamp(5, 7)
-        : rooms.length;
-    final now = DateTime.now().toUtc().add(const Duration(hours: 9));
-    final today = DateTime.utc(now.year, now.month, now.day);
-    final columns = [
-      for (var i = 0; i < count; i++)
-        GridColumn(
-          teacherMode
-              ? viewWeekdays[viewDate(widget.start, i).weekday - 1]
-              : '${rooms[i]}반',
-          teacherMode
-              ? '${viewDate(widget.start, i).month}/${viewDate(widget.start, i).day}'
-              : '${viewDate(widget.start, day).month}/${viewDate(widget.start, day).day}',
-          today:
-              teacherMode &&
-              widget.highlight &&
-              viewDate(widget.start, i) == today,
-          badge:
-              !teacherMode &&
-                  widget.grade == widget.homeGrade &&
-                  rooms[i] == widget.room
-              ? '우리 반'
-              : null,
-          highlighted:
-              widget.highlight &&
-              (teacherMode
-                  ? viewDate(widget.start, i) == today
-                  : widget.grade == widget.homeGrade &&
-                        rooms[i] == widget.room),
-        ),
-    ];
-    final cells = <(int, int), List<GridLesson>>{};
-    var periods = 0;
-    for (final entry in entries) {
-      final period = entry.lesson['period'] as int;
-      if (period > periods) periods = period;
-      final col = teacherMode ? entry.day : rooms.indexOf(entry.room);
-      final changed = entry.lesson['changed'] == true;
-      (cells[(col, period)] ??= []).add(
-        GridLesson(
-          subject: entry.lesson['subject'] as String? ?? '',
-          secondary: teacherMode
-              ? '${entry.grade}학년 ${entry.room}반'
-              : widget.showTeachers
-              ? widget.teacherLabel(entry.lesson)
-              : '',
-          changed: changed,
-          semantics:
-              '${entry.grade}학년 ${entry.room}반 ${viewWeekdays[entry.day]}요일 $period교시 ${entry.lesson['subject']}',
-          onTap: changed
-              ? () => widget.onChange(
-                  viewDate(widget.start, entry.day),
-                  period,
-                  entry.lesson,
-                )
-              : null,
-        ),
-      );
-    }
-    if (cells.isEmpty) return const TimetableEmptyResult();
-    Widget grid() =>
-        TimetableGrid(columns: columns, cells: cells, periods: periods);
-    if (teacherMode) return grid();
+    final grid = overviewGrid(widget);
+    if (grid.cells.isEmpty) return const TimetableEmptyResult();
+    if (widget.mode == TimetableMode.teachers) return grid;
     return LayoutBuilder(
       builder: (ctx, box) => MediaQuery.removePadding(
         context: ctx,
@@ -492,15 +410,97 @@ class _TimetableOverviewState extends State<TimetableOverview> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.only(bottom: 16),
             child: SizedBox(
-              width: (34 + rooms.length * 64.0).clamp(
+              width: (34 + grid.columns.length * 64.0).clamp(
                 box.maxWidth,
                 double.infinity,
               ),
-              child: grid(),
+              child: grid,
             ),
           ),
         ),
       ),
     );
   }
+}
+
+TimetableGrid overviewGrid(TimetableOverview widget) {
+  final teacherMode = widget.mode == TimetableMode.teachers;
+  final choices = teacherChoices(widget.grades, widget.teacherLabel);
+  final chosen = choices
+      .where((e) => e.id == widget.selectedTeacher)
+      .firstOrNull;
+  final active = widget.selectedTeacher == null ? choices.firstOrNull : chosen;
+  final day = (widget.selectedDay ?? 0).clamp(0, 6);
+  final rooms =
+      (widget.grades[widget.grade] as Map).keys
+          .map((e) => e.toString())
+          .toList()
+        ..sort(naturalOrder);
+  final entries = teacherMode
+      ? active?.lessons ?? <SchoolLesson>[]
+      : schoolLessons(widget.grades)
+            .where((e) => e.grade == widget.grade && e.day == day)
+            .toList();
+  final count = teacherMode
+      ? entries
+            .fold<int>(5, (n, e) => e.day + 1 > n ? e.day + 1 : n)
+            .clamp(5, 7)
+      : rooms.length;
+  final now = DateTime.now().toUtc().add(const Duration(hours: 9));
+  final today = DateTime.utc(now.year, now.month, now.day);
+  final columns = [
+    for (var i = 0; i < count; i++)
+      GridColumn(
+        teacherMode
+            ? viewWeekdays[viewDate(widget.start, i).weekday - 1]
+            : '${rooms[i]}반',
+        teacherMode
+            ? '${viewDate(widget.start, i).month}/${viewDate(widget.start, i).day}'
+            : '${viewDate(widget.start, day).month}/${viewDate(widget.start, day).day}',
+        today:
+            teacherMode &&
+            widget.highlight &&
+            viewDate(widget.start, i) == today,
+        badge:
+            !teacherMode &&
+                widget.grade == widget.homeGrade &&
+                rooms[i] == widget.room
+            ? '우리 반'
+            : null,
+        highlighted:
+            widget.highlight &&
+            (teacherMode
+                ? viewDate(widget.start, i) == today
+                : widget.grade == widget.homeGrade && rooms[i] == widget.room),
+      ),
+  ];
+  final cells = <(int, int), List<GridLesson>>{};
+  var periods = 0;
+  for (final entry in entries) {
+    final period = entry.lesson['period'] as int;
+    if (period > periods) periods = period;
+    final col = teacherMode ? entry.day : rooms.indexOf(entry.room);
+    final changed = entry.lesson['changed'] == true;
+    (cells[(col, period)] ??= []).add(
+      GridLesson(
+        subject: entry.lesson['subject'] as String? ?? '',
+        secondary: teacherMode
+            ? '${entry.grade}학년 ${entry.room}반'
+            : widget.showTeachers
+            ? widget.teacherLabel(entry.lesson)
+            : '',
+        changed: changed,
+        semantics:
+            '${entry.grade}학년 ${entry.room}반 ${viewWeekdays[entry.day]}요일 $period교시 ${entry.lesson['subject']}',
+        onTap: changed
+            ? () => widget.onChange(
+                viewDate(widget.start, entry.day),
+                period,
+                entry.lesson,
+              )
+            : null,
+      ),
+    );
+  }
+  return TimetableGrid(columns: columns, cells: cells, periods: periods);
 }

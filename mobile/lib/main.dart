@@ -1,4 +1,5 @@
 import 'timetable_grid.dart';
+import 'native_home.dart';
 import 'timetable_views.dart';
 
 import 'package:flutter/services.dart';
@@ -1534,175 +1535,321 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
-    child: SafeArea(
-      top: false,
-      bottom: false,
-      child: LargeTitleScroll(
-        title: '주간 시간표',
-        actionLabel: '학교 바꾸기',
-        onAction: widget.changeSchool,
-        padding: EdgeInsets.fromLTRB(
-          20,
-          6,
-          20,
-          90 + MediaQuery.paddingOf(context).bottom,
-        ),
-        children: [
-          Text(
-            widget.school['name'],
-            style: TextStyle(
-              color: CupertinoColors.secondaryLabel.resolveFrom(context),
+  Widget build(BuildContext context) => Platform.isIOS
+      ? nativePage()
+      : CupertinoPageScaffold(
+          child: SafeArea(
+            top: false,
+            bottom: false,
+            child: LargeTitleScroll(
+              title: '주간 시간표',
+              actionLabel: '학교 바꾸기',
+              onAction: widget.changeSchool,
+              padding: EdgeInsets.fromLTRB(
+                20,
+                6,
+                20,
+                90 + MediaQuery.paddingOf(context).bottom,
+              ),
+              children: [
+                Text(
+                  widget.school['name'],
+                  style: TextStyle(
+                    color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                FutureBuilder<dynamic>(
+                  future: data,
+                  builder: (context, snapshot) {
+                    final cached =
+                        week == 0 && offlineWeek?['start'] == currentMonday
+                        ? offlineWeek
+                        : null;
+                    if (cached == null &&
+                        snapshot.connectionState != ConnectionState.done) {
+                      final previous = snapshot.data ?? offlineWeek;
+                      final previousGrades =
+                          previous?['grades'] as Map<String, dynamic>?;
+                      final available = previousGrades?.keys.where(
+                        (key) => previousGrades[key].isNotEmpty,
+                      );
+                      final g = (available?.contains(grade) ?? false)
+                          ? grade
+                          : available?.firstOrNull ?? grade;
+                      final rooms =
+                          (previousGrades?[g] as Map<String, dynamic>?)?.keys;
+                      final c = (rooms?.contains(room) ?? false)
+                          ? room
+                          : rooms?.firstOrNull ?? room;
+                      final start =
+                          (timetableMonday ?? DateTime.parse(currentMonday))
+                              .add(Duration(days: 7 * week));
+                      final previousDays = previousGrades?[g]?[c] as List?;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          viewToolbar(
+                            previousGrades != null && g != null && c != null
+                                ? contextSelector(previousGrades, g, c, start)
+                                : const ViewDropdown(label: '선택'),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Text(
+                              week == 0 ? '이번 주 시간표' : '다음 주 시간표',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: CupertinoColors.systemGrey,
+                              ),
+                            ),
+                          ),
+                          if (viewMode == TimetableMode.mine)
+                            weekGrid(
+                              start,
+                              List.filled(previousDays?.length ?? 5, const []),
+                              loading: true,
+                            )
+                          else
+                            const Padding(
+                              padding: EdgeInsets.all(32),
+                              child: CupertinoActivityIndicator(),
+                            ),
+                        ],
+                      );
+                    }
+                    if (cached == null && snapshot.hasError) {
+                      return Column(
+                        children: [
+                          viewToolbar(const ViewDropdown(label: '선택')),
+                          ErrorResult(
+                            icon: CupertinoIcons.calendar,
+                            title: week == 0
+                                ? '이번 주 시간표를 불러오지 못했어요'
+                                : '다음 주 시간표를 불러오지 못했어요',
+                            description: '잠시 후 다시 시도해 주세요.',
+                            onRetry: () => setState(() {
+                              data = _forNextBuild(load());
+                            }),
+                          ),
+                        ],
+                      );
+                    }
+                    final table =
+                        snapshot.connectionState == ConnectionState.done &&
+                            snapshot.hasData
+                        ? snapshot.data
+                        : cached!;
+                    final grades = table['grades'] as Map<String, dynamic>;
+                    final available = grades.keys
+                        .where((g) => grades[g].isNotEmpty)
+                        .toList();
+                    if (available.isEmpty) {
+                      return Column(
+                        children: [
+                          viewToolbar(const ViewDropdown(label: '선택')),
+                          const Text('등록된 시간표가 없어요.'),
+                        ],
+                      );
+                    }
+                    final g = available.contains(grade)
+                        ? grade!
+                        : available.first;
+                    final rooms = (grades[g] as Map<String, dynamic>).keys
+                        .toList();
+                    final c = rooms.contains(room) ? room! : rooms.first;
+                    final days = grades[g][c] as List<dynamic>;
+                    final start = DateTime.parse(table['start']);
+                    final classButton = contextSelector(grades, g, c, start);
+                    if (week == 0) queueGuide();
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        viewToolbar(classButton),
+                        if (snapshot.hasError)
+                          PressButton(
+                            onPressed: () =>
+                                setState(() => data = _forNextBuild(load())),
+                            child: const Text('저장된 시간표 · 다시 불러오기'),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Text(
+                            "컴시간 갱신 · ${table['updated']}",
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: CupertinoColors.systemGrey,
+                            ),
+                          ),
+                        ),
+                        if (viewMode == TimetableMode.mine)
+                          weekGrid(start, days)
+                        else
+                          TimetableOverview(
+                            mode: viewMode,
+                            selectedTeacher: overviewTeacher,
+                            selectedDay:
+                                overviewDay ?? (today.weekday - 1).clamp(0, 4),
+                            grades: grades,
+                            grade:
+                                grades.containsKey(overviewGrade) &&
+                                    viewMode == TimetableMode.classes
+                                ? overviewGrade!
+                                : g,
+                            room: c,
+                            homeGrade: g,
+                            highlight: widget.highlight,
+                            start: start,
+                            teacherLabel: displayTeacher,
+                            showTeachers: widget.teachers,
+                            onChange: showLessonChange,
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 10),
-          FutureBuilder<dynamic>(
-            future: data,
-            builder: (context, snapshot) {
-              final cached = week == 0 && offlineWeek?['start'] == currentMonday
-                  ? offlineWeek
-                  : null;
-              if (cached == null &&
-                  snapshot.connectionState != ConnectionState.done) {
-                final previous = snapshot.data ?? offlineWeek;
-                final previousGrades =
-                    previous?['grades'] as Map<String, dynamic>?;
-                final available = previousGrades?.keys.where(
-                  (key) => previousGrades[key].isNotEmpty,
-                );
-                final g = (available?.contains(grade) ?? false)
-                    ? grade
-                    : available?.firstOrNull ?? grade;
-                final rooms =
-                    (previousGrades?[g] as Map<String, dynamic>?)?.keys;
-                final c = (rooms?.contains(room) ?? false)
-                    ? room
-                    : rooms?.firstOrNull ?? room;
-                final start = (timetableMonday ?? DateTime.parse(currentMonday))
-                    .add(Duration(days: 7 * week));
-                final previousDays = previousGrades?[g]?[c] as List?;
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    viewToolbar(
-                      previousGrades != null && g != null && c != null
-                          ? contextSelector(previousGrades, g, c, start)
-                          : const ViewDropdown(label: '선택'),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        week == 0 ? '이번 주 시간표' : '다음 주 시간표',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: CupertinoColors.systemGrey,
-                        ),
-                      ),
-                    ),
-                    if (viewMode == TimetableMode.mine)
-                      weekGrid(
-                        start,
-                        List.filled(previousDays?.length ?? 5, const []),
-                        loading: true,
-                      )
-                    else
-                      const Padding(
-                        padding: EdgeInsets.all(32),
-                        child: CupertinoActivityIndicator(),
-                      ),
-                  ],
-                );
+        );
+
+  Widget nativePage() => FutureBuilder<dynamic>(
+    future: data,
+    builder: (context, snapshot) {
+      final cached = week == 0 && offlineWeek?['start'] == currentMonday
+          ? offlineWeek
+          : null;
+      final table =
+          snapshot.connectionState == ConnectionState.done && snapshot.hasData
+          ? snapshot.data
+          : cached;
+      final ready =
+          table != null &&
+          (snapshot.connectionState == ConnectionState.done || cached != null);
+      final grades = table?['grades'] as Map<String, dynamic>?;
+      final available =
+          grades?.keys.where((g) => (grades[g] as Map).isNotEmpty).toList() ??
+          <String>[];
+      final g = available.contains(grade) ? grade! : available.firstOrNull;
+      final rooms = g == null
+          ? <String>[]
+          : (grades![g] as Map).keys.cast<String>().toList();
+      final c = rooms.contains(room) ? room! : rooms.firstOrNull;
+      final start = table == null
+          ? DateTime.parse(currentMonday).add(Duration(days: week * 7))
+          : DateTime.parse(table['start']);
+      final selector = g != null && c != null
+          ? contextSelector(grades!, g, c, start) as ViewDropdown
+          : const ViewDropdown(label: '선택');
+      TimetableGrid? grid;
+      if (ready && g != null && c != null) {
+        if (viewMode == TimetableMode.mine) {
+          grid = weekGrid(start, grades![g][c]) as TimetableGrid;
+        } else {
+          grid = overviewGrid(
+            TimetableOverview(
+              mode: viewMode,
+              selectedTeacher: overviewTeacher,
+              selectedDay: overviewDay ?? (today.weekday - 1).clamp(0, 4),
+              grades: grades!,
+              grade:
+                  grades.containsKey(overviewGrade) &&
+                      viewMode == TimetableMode.classes
+                  ? overviewGrade!
+                  : g,
+              room: c,
+              homeGrade: g,
+              highlight: widget.highlight,
+              start: start,
+              teacherLabel: displayTeacher,
+              showTeachers: widget.teachers,
+              onChange: showLessonChange,
+            ),
+          );
+        }
+        if (week == 0) queueGuide();
+      }
+      final taps = <String, VoidCallback>{};
+      final cells = <Map<String, dynamic>>[];
+      if (grid != null) {
+        for (final cell in grid.cells.entries) {
+          cells.add({
+            'column': cell.key.$1,
+            'period': cell.key.$2,
+            'lessons': [
+              for (var i = 0; i < cell.value.length; i++)
+                (() {
+                  final lesson = cell.value[i];
+                  final key = 'lesson:${cell.key.$1}:${cell.key.$2}:$i';
+                  if (lesson.onTap != null) taps[key] = lesson.onTap!;
+                  return {
+                    'subject': lesson.subject,
+                    'secondary': lesson.secondary,
+                    'changed': lesson.changed,
+                    'semantics': lesson.semantics,
+                    'action': lesson.onTap == null ? null : key,
+                  };
+                })(),
+            ],
+          });
+        }
+      }
+      return NativePageModel(
+        page: 'timetable',
+        model: {
+          'subtitle': widget.school['name'],
+          'mode': viewMode.label,
+          'context': selector.label,
+          'week': week,
+          'showWeek': viewMode != TimetableMode.classes,
+          'status': ready
+              ? (grid == null || grid.cells.isEmpty ? 'empty' : 'ready')
+              : snapshot.hasError
+              ? 'error'
+              : 'loading',
+          'updated': table?['updated'] ?? '',
+          'offline': snapshot.hasError && cached != null,
+          'horizontal': viewMode == TimetableMode.classes,
+          'periods': grid?.periods ?? 0,
+          'columns': [
+            for (final col in grid?.columns ?? <GridColumn>[])
+              {
+                'label': col.label,
+                'detail': col.detail,
+                'badge': col.badge ?? (col.today ? '오늘' : null),
+                'highlighted': col.highlighted,
+              },
+          ],
+          'cells': cells,
+        },
+        onAction: (action, value) async {
+          if (taps.containsKey(action)) {
+            taps[action]!();
+            return;
+          }
+          switch (action) {
+            case 'school':
+              widget.changeSchool();
+            case 'context':
+              selector.onPressed?.call();
+            case 'mode':
+              final result = await chooseViewOption(context, '시간표 보기', [
+                for (final m in TimetableMode.values) (m, m.label),
+              ], viewMode);
+              if (mounted && result != null) setState(() => viewMode = result);
+            case 'week':
+              if (value != week) {
+                setState(() {
+                  week = value as int;
+                  data = _forNextBuild(load());
+                });
               }
-              if (cached == null && snapshot.hasError) {
-                return Column(
-                  children: [
-                    viewToolbar(const ViewDropdown(label: '선택')),
-                    ErrorResult(
-                      icon: CupertinoIcons.calendar,
-                      title: week == 0
-                          ? '이번 주 시간표를 불러오지 못했어요'
-                          : '다음 주 시간표를 불러오지 못했어요',
-                      description: '잠시 후 다시 시도해 주세요.',
-                      onRetry: () => setState(() {
-                        data = _forNextBuild(load());
-                      }),
-                    ),
-                  ],
-                );
-              }
-              final table =
-                  snapshot.connectionState == ConnectionState.done &&
-                      snapshot.hasData
-                  ? snapshot.data
-                  : cached!;
-              final grades = table['grades'] as Map<String, dynamic>;
-              final available = grades.keys
-                  .where((g) => grades[g].isNotEmpty)
-                  .toList();
-              if (available.isEmpty) {
-                return Column(
-                  children: [
-                    viewToolbar(const ViewDropdown(label: '선택')),
-                    const Text('등록된 시간표가 없어요.'),
-                  ],
-                );
-              }
-              final g = available.contains(grade) ? grade! : available.first;
-              final rooms = (grades[g] as Map<String, dynamic>).keys.toList();
-              final c = rooms.contains(room) ? room! : rooms.first;
-              final days = grades[g][c] as List<dynamic>;
-              final start = DateTime.parse(table['start']);
-              final classButton = contextSelector(grades, g, c, start);
-              if (week == 0) queueGuide();
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  viewToolbar(classButton),
-                  if (snapshot.hasError)
-                    PressButton(
-                      onPressed: () =>
-                          setState(() => data = _forNextBuild(load())),
-                      child: const Text('저장된 시간표 · 다시 불러오기'),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(
-                      "컴시간 갱신 · ${table['updated']}",
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: CupertinoColors.systemGrey,
-                      ),
-                    ),
-                  ),
-                  if (viewMode == TimetableMode.mine)
-                    weekGrid(start, days)
-                  else
-                    TimetableOverview(
-                      mode: viewMode,
-                      selectedTeacher: overviewTeacher,
-                      selectedDay:
-                          overviewDay ?? (today.weekday - 1).clamp(0, 4),
-                      grades: grades,
-                      grade:
-                          grades.containsKey(overviewGrade) &&
-                              viewMode == TimetableMode.classes
-                          ? overviewGrade!
-                          : g,
-                      room: c,
-                      homeGrade: g,
-                      highlight: widget.highlight,
-                      start: start,
-                      teacherLabel: displayTeacher,
-                      showTeachers: widget.teachers,
-                      onChange: showLessonChange,
-                    ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    ),
+            case 'retry':
+              setState(() => data = _forNextBuild(load()));
+          }
+        },
+      );
+    },
   );
 
   Widget contextSelector(

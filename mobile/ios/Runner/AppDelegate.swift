@@ -16,9 +16,9 @@ import WidgetKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "SchoolzipTabs") {
       editors = NativeEditors(messenger: registrar.messenger(), presenter: { registrar.viewController })
+      registrar.register(MainTabsFactory(registrar.messenger()), withId: "schoolzip/main-tabs")
       registrar.register(WeekControlFactory(registrar.messenger()), withId: "schoolzip/week")
       registrar.register(SettingsFactory(registrar.messenger()), withId: "schoolzip/settings")
-      registrar.register(SchoolTabsFactory(registrar.messenger()), withId: "schoolzip/tabs")
     }
     let channel = FlutterMethodChannel(name: "schoolzip/today", binaryMessenger: engineBridge.applicationRegistrar.messenger())
     channel.setMethodCallHandler { call, result in
@@ -53,65 +53,6 @@ import WidgetKit
       WidgetCenter.shared.reloadTimelines(ofKind:"SchoolzipToday")
       result(nil)
     }
-  }
-}
-
-private final class SchoolTabsFactory: NSObject, FlutterPlatformViewFactory {
-  let messenger: FlutterBinaryMessenger
-  init(_ messenger: FlutterBinaryMessenger) { self.messenger = messenger }
-  func create(withFrame frame: CGRect, viewIdentifier id: Int64, arguments args: Any?) -> FlutterPlatformView {
-    SchoolTabs(frame: frame, channel: FlutterMethodChannel(name: "schoolzip/tabs/\(id)", binaryMessenger: messenger))
-  }
-}
-
-// Let UIKit own tab geometry, safe-area insets and the Liquid Glass background.
-private final class SchoolTabs: UIView, FlutterPlatformView, UITabBarControllerDelegate {
-  private let controller = UITabBarController()
-  private let channel: FlutterMethodChannel
-  init(frame: CGRect, channel: FlutterMethodChannel) {
-    self.channel = channel
-    super.init(frame: frame)
-    controller.viewControllers = [("시간표", "calendar"), ("급식", "fork.knife"), ("설정", "gearshape")].enumerated().map { index, item in
-      let page = UIViewController()
-      page.view.backgroundColor = .clear
-      page.tabBarItem = UITabBarItem(title: item.0, image: UIImage(systemName: item.1), tag: index)
-      return page
-    }
-    controller.delegate = self
-    controller.view.backgroundColor = .clear
-    controller.tabBar.tintColor = .systemIndigo
-    controller.view.frame = bounds
-    controller.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    addSubview(controller.view)
-    channel.setMethodCallHandler { [weak self] call, reply in
-      guard call.method == "select", let index = call.arguments as? Int,
-            (0..<3).contains(index) else { reply(FlutterMethodNotImplemented); return }
-      self?.controller.selectedIndex = index
-      reply(nil)
-    }
-  }
-  required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
-  deinit { channel.setMethodCallHandler(nil) }
-  func view() -> UIView { self }
-  override func didMoveToWindow() {
-    super.didMoveToWindow()
-    if window == nil {
-      controller.willMove(toParent: nil)
-      controller.removeFromParent()
-    } else if controller.parent == nil {
-      var responder: UIResponder? = next
-      while let current = responder {
-        if let parent = current as? UIViewController {
-          parent.addChild(controller)
-          controller.didMove(toParent: parent)
-          break
-        }
-        responder = current.next
-      }
-    }
-  }
-  func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
-    channel.invokeMethod("tap", arguments: tabBarController.selectedIndex)
   }
 }
 
@@ -191,6 +132,7 @@ private final class SettingsHost: UIView, FlutterPlatformView {
 }
 
 private final class SettingsTable: UITableViewController {
+  var bottomPadding: CGFloat = 90
   private var selection: [String:String]
   private let channel: FlutterMethodChannel
   private let headers = ["학교 설정", "시간표", "급식", "기타"]
@@ -229,8 +171,8 @@ private final class SettingsTable: UITableViewController {
     super.viewDidLoad()
     tableView.rowHeight = UITableView.automaticDimension
     tableView.estimatedRowHeight = 44
-    tableView.contentInset.bottom = 90
-    tableView.verticalScrollIndicatorInsets.bottom = 90
+    tableView.contentInset.bottom = bottomPadding
+    tableView.verticalScrollIndicatorInsets.bottom = bottomPadding
   }
   override func numberOfSections(in tableView: UITableView) -> Int { headers.count }
   override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { section == 1 ? 3 : section == 3 ? 2 : 1 }
@@ -564,5 +506,336 @@ private final class NativeTeacherReview: UITableViewController, UISearchResultsU
     }
     navigationItem.rightBarButtonItem?.isEnabled = !selected.isEmpty
     tableView.reloadData()
+  }
+}
+
+// Complete UIKit screens: real tab children and one native vertical scroll view per page.
+private final class MainTabsFactory: NSObject, FlutterPlatformViewFactory {
+  let messenger: FlutterBinaryMessenger
+  init(_ messenger: FlutterBinaryMessenger) { self.messenger = messenger }
+  func create(withFrame frame: CGRect, viewIdentifier id: Int64, arguments args: Any?) -> FlutterPlatformView {
+    MainTabsHost(frame: frame, messenger: messenger)
+  }
+}
+
+private final class MainTabsHost: UIView, FlutterPlatformView, UITabBarControllerDelegate {
+  private let tabs = UITabBarController()
+  private let channel: FlutterMethodChannel
+  private let timetable: SchoolContentTable
+  private let meals: SchoolContentTable
+  init(frame: CGRect, messenger: FlutterBinaryMessenger) {
+    let bridge = FlutterMethodChannel(name: "schoolzip/home", binaryMessenger: messenger)
+    channel = bridge
+    timetable = SchoolContentTable(page: "timetable", title: "주간 시간표", channel: bridge)
+    meals = SchoolContentTable(page: "meals", title: "급식 식단표", channel: bridge)
+    let settings = SettingsTable([:], FlutterMethodChannel(name: "schoolzip/home/settings", binaryMessenger: messenger))
+    settings.bottomPadding = 0
+    super.init(frame: frame)
+    let pages: [(UIViewController, String, String)] = [(timetable, "시간표", "calendar"), (meals, "급식", "fork.knife"), (settings, "설정", "gearshape")]
+    tabs.viewControllers = pages.enumerated().map { index, value in
+      let nav = UINavigationController(rootViewController: value.0)
+      nav.navigationBar.prefersLargeTitles = true
+      nav.navigationBar.tintColor = .systemIndigo
+      value.0.navigationItem.largeTitleDisplayMode = .always
+      nav.tabBarItem = UITabBarItem(title: value.1, image: UIImage(systemName: value.2), tag: index)
+      return nav
+    }
+    tabs.delegate = self
+    tabs.tabBar.tintColor = .systemIndigo
+    tabs.view.frame = bounds
+    tabs.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    addSubview(tabs.view)
+    bridge.setMethodCallHandler { [weak self] call, reply in
+      guard let self = self, call.method == "update", let args = call.arguments as? [String:Any],
+            let page = args["page"] as? String, let model = args["model"] as? [String:Any] else {
+        reply(FlutterMethodNotImplemented); return
+      }
+      switch page {
+      case "tabs":
+        if let index = model["index"] as? Int, (0..<3).contains(index), index != self.tabs.selectedIndex { self.tabs.selectedIndex = index }
+      case "timetable": self.timetable.update(model)
+      case "meals": self.meals.update(model)
+      default: break
+      }
+      reply(nil)
+    }
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
+  deinit { channel.setMethodCallHandler(nil) }
+  func view() -> UIView { self }
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil {
+      tabs.willMove(toParent: nil); tabs.removeFromParent()
+    } else if tabs.parent == nil {
+      var nextResponder: UIResponder? = next
+      while let responder = nextResponder {
+        if let parent = responder as? UIViewController {
+          parent.addChild(tabs); tabs.didMove(toParent: parent)
+          channel.invokeMethod("ready", arguments: nil)
+          break
+        }
+        nextResponder = responder.next
+      }
+    }
+  }
+  func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
+    channel.invokeMethod("event", arguments: ["page":"tabs", "action":"select", "value":tabBarController.selectedIndex])
+  }
+}
+
+private final class SchoolContentTable: UITableViewController {
+  private let page: String
+  private let channel: FlutterMethodChannel
+  private var model: [String:Any] = [:]
+  private let week = UISegmentedControl(items: ["이번 주", "다음 주"])
+  private var horizontalOffset: CGFloat = 0
+  private weak var gridScroll: UIScrollView?
+  init(page: String, title: String, channel: FlutterMethodChannel) {
+    self.page = page; self.channel = channel
+    super.init(style: .insetGrouped)
+    self.title = title
+    week.addTarget(self, action: #selector(weekChanged), for: .valueChanged)
+    if page == "timetable" {
+      navigationItem.rightBarButtonItem = UIBarButtonItem(title: "학교 바꾸기", style: .plain, target: self, action: #selector(school))
+    }
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    tableView.backgroundColor = .systemGroupedBackground
+    tableView.separatorStyle = .none
+    tableView.rowHeight = UITableView.automaticDimension
+    tableView.estimatedRowHeight = 400
+    tableView.alwaysBounceVertical = false
+    tableView.contentInset.bottom = 12
+    tableView.sectionHeaderHeight = 0
+    tableView.sectionFooterHeight = 0
+  }
+  func update(_ value: [String:Any]) {
+    horizontalOffset = gridScroll?.contentOffset.x ?? horizontalOffset
+    model = value
+    if isViewLoaded { tableView.reloadData() }
+  }
+  private func emit(_ action: String, _ value: Any? = nil) {
+    var event: [String:Any] = ["page":page, "action":action]
+    if let value = value { event["value"] = value }
+    channel.invokeMethod("event", arguments: event)
+  }
+  @objc private func school() { emit("school") }
+  @objc private func weekChanged() { emit("week", week.selectedSegmentIndex) }
+  override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { 1 }
+  override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+    cell.backgroundColor = .clear
+    cell.selectionStyle = .none
+    let content = stack(spacing: 12)
+    content.addArrangedSubview(label(model["subtitle"] as? String ?? "", size: 17, color: .secondaryLabel))
+    if page == "timetable" { addTimetable(to: content) } else { addMeals(to: content) }
+    pin(content, to: cell.contentView)
+    return cell
+  }
+  private func stack(axis: NSLayoutConstraint.Axis = .vertical, spacing: CGFloat = 0) -> UIStackView {
+    let value = UIStackView(); value.axis = axis; value.spacing = spacing; return value
+  }
+  private func label(_ text: String, size: CGFloat = 17, weight: UIFont.Weight = .regular, color: UIColor = .label, centered: Bool = false) -> UILabel {
+    let value = UILabel(); value.text = text; value.numberOfLines = 0
+    value.font = UIFontMetrics.default.scaledFont(for: .systemFont(ofSize: size, weight: weight))
+    value.adjustsFontForContentSizeCategory = true; value.textColor = color
+    value.textAlignment = centered ? .center : .natural
+    return value
+  }
+  private func pin(_ child: UIView, to parent: UIView, inset: CGFloat = 0) {
+    parent.addSubview(child); child.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([child.leadingAnchor.constraint(equalTo: parent.leadingAnchor, constant: inset), child.trailingAnchor.constraint(equalTo: parent.trailingAnchor, constant: -inset), child.topAnchor.constraint(equalTo: parent.topAnchor, constant: inset), child.bottomAnchor.constraint(equalTo: parent.bottomAnchor, constant: -inset)])
+  }
+  private func button(_ title: String, action: String, symbol: String? = nil) -> UIButton {
+    var config = UIButton.Configuration.filled()
+    config.title = title; config.baseBackgroundColor = .secondarySystemGroupedBackground
+    config.baseForegroundColor = .label; config.cornerStyle = .fixed
+    config.background.cornerRadius = 20
+    config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+      var attributes = attributes
+      attributes.font = UIFontMetrics.default.scaledFont(for: .systemFont(ofSize: 16, weight: .semibold))
+      return attributes
+    }
+    config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14)
+    config.titleLineBreakMode = .byTruncatingTail
+    if let symbol = symbol { config.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))?.withTintColor(.systemIndigo, renderingMode: .alwaysOriginal); config.imagePlacement = .trailing; config.imagePadding = 8 }
+    let value = UIButton(configuration: config, primaryAction: UIAction { [weak self] _ in self?.emit(action) })
+    value.accessibilityLabel = title
+    return value
+  }
+  private func addTimetable(to content: UIStackView) {
+    let controls = stack(axis: .horizontal, spacing: 8); controls.distribution = .fillEqually
+    controls.addArrangedSubview(button(model["mode"] as? String ?? "요일별 보기", action: "mode", symbol: "chevron.down"))
+    controls.addArrangedSubview(button(model["context"] as? String ?? "선택", action: "context", symbol: "chevron.down"))
+    content.addArrangedSubview(controls)
+    if model["showWeek"] as? Bool ?? true {
+      let index = model["week"] as? Int ?? 0
+      if week.selectedSegmentIndex != index { week.selectedSegmentIndex = index }
+      content.addArrangedSubview(week)
+    }
+    if let updated = model["updated"] as? String, !updated.isEmpty {
+      content.addArrangedSubview(label("컴시간 갱신 · \(updated)", size: 13, color: .secondaryLabel))
+    }
+    if model["offline"] as? Bool == true { content.addArrangedSubview(button("저장된 시간표 · 다시 불러오기", action: "retry")) }
+    switch model["status"] as? String {
+    case "ready": content.addArrangedSubview(makeGrid())
+    case "empty": content.addArrangedSubview(result("등록된 수업이 없어요", detail: "다른 날짜나 보기를 선택해 주세요.", symbol: "calendar"))
+    case "error": content.addArrangedSubview(result("시간표를 불러오지 못했어요", detail: "잠시 후 다시 시도해 주세요.", symbol: "calendar.badge.exclamationmark")); content.addArrangedSubview(button("다시 시도", action: "retry"))
+    default: content.addArrangedSubview(loading())
+    }
+  }
+  private func loading() -> UIView {
+    let spinner = UIActivityIndicatorView(style: .medium); spinner.startAnimating()
+    spinner.heightAnchor.constraint(equalToConstant: 90).isActive = true
+    return spinner
+  }
+  private func result(_ title: String, detail: String, symbol: String) -> UIView {
+    let body = stack(spacing: 10)
+    let icon = UIImageView(image: UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 48)))
+    icon.tintColor = .systemIndigo; icon.contentMode = .scaleAspectFit
+    icon.heightAnchor.constraint(equalToConstant: 72).isActive = true
+    body.addArrangedSubview(icon)
+    body.addArrangedSubview(label(title, size: 21, weight: .bold, centered: true))
+    body.addArrangedSubview(label(detail, size: 15, color: .secondaryLabel, centered: true))
+    let box = UIView(); pin(body, to: box, inset: 24); return box
+  }
+  private func makeGrid() -> UIView {
+    let columns = model["columns"] as? [[String:Any]] ?? []
+    guard !columns.isEmpty else { return UIView() }
+    let periods = model["periods"] as? Int ?? 0
+    var cells: [String:[[String:Any]]] = [:]
+    for cell in model["cells"] as? [[String:Any]] ?? [] {
+      cells["\(cell["column"] as? Int ?? 0):\(cell["period"] as? Int ?? 0)"] = cell["lessons"] as? [[String:Any]] ?? []
+    }
+    let all = stack()
+    let badges = stack(axis: .horizontal)
+    let spacer = UIView(); spacer.widthAnchor.constraint(equalToConstant: 34).isActive = true
+    badges.addArrangedSubview(spacer)
+    var firstBadge: UIView?
+    for column in columns {
+      let badge = UIView()
+      if let text = column["badge"] as? String, !text.isEmpty {
+        let pill = UIView(); pill.backgroundColor = UIColor.systemIndigo.withAlphaComponent(0.12)
+        pill.layer.cornerRadius = 10
+        let textView = label(text, size: 11, weight: .bold, color: .systemIndigo, centered: true)
+        pin(textView, to: pill, inset: 3)
+        badge.addSubview(pill); pill.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([pill.centerXAnchor.constraint(equalTo: badge.centerXAnchor), pill.centerYAnchor.constraint(equalTo: badge.centerYAnchor), pill.widthAnchor.constraint(lessThanOrEqualTo: badge.widthAnchor)])
+      }
+      badges.addArrangedSubview(badge)
+      if let first = firstBadge { badge.widthAnchor.constraint(equalTo: first.widthAnchor).isActive = true } else { firstBadge = badge }
+    }
+    let badgeHeight = UIFontMetrics.default.scaledValue(for: 24)
+    badges.heightAnchor.constraint(equalToConstant: badgeHeight).isActive = true
+    all.addArrangedSubview(badges)
+    let table = stack(); table.backgroundColor = .secondarySystemGroupedBackground
+    table.layer.cornerRadius = 22; table.clipsToBounds = true
+    all.addArrangedSubview(table)
+    let headerHeight = UIFontMetrics.default.scaledValue(for: 52)
+    var totalHeight = badgeHeight + headerHeight
+    for period in 0...periods {
+      let row = stack(axis: .horizontal)
+      let count = period == 0 ? 1 : (0..<columns.count).map { cells["\($0):\(period)"]?.count ?? 0 }.max() ?? 1
+      let height = period == 0 ? headerHeight : CGFloat(max(1,count)) * UIFontMetrics.default.scaledValue(for: 52)
+      if period > 0 { totalHeight += height }
+      row.heightAnchor.constraint(equalToConstant: height).isActive = true
+      if period == 0 { row.backgroundColor = UIColor.systemIndigo.withAlphaComponent(0.12) }
+      let index = label(period == 0 ? "교시" : "\(period)", size: period == 0 ? 11 : 14, weight: .semibold, centered: true)
+      index.widthAnchor.constraint(equalToConstant: 34).isActive = true
+      row.addArrangedSubview(index)
+      var firstCell: UIView?
+      for (col, column) in columns.enumerated() {
+        let box = UIView(); box.layer.borderColor = UIColor.separator.cgColor; box.layer.borderWidth = 0.25
+        if period != 0 && column["highlighted"] as? Bool == true { box.backgroundColor = UIColor.systemIndigo.withAlphaComponent(0.09) }
+        let values = stack(spacing: 2)
+        if period == 0 {
+          values.addArrangedSubview(label(column["label"] as? String ?? "", size: 17, weight: .bold, color: .systemIndigo, centered: true))
+          values.addArrangedSubview(label(column["detail"] as? String ?? "", size: 11, centered: true))
+        } else if let lessons = cells["\(col):\(period)"], !lessons.isEmpty {
+          for lesson in lessons {
+            let lines = stack(spacing: 1)
+            lines.addArrangedSubview(label(lesson["subject"] as? String ?? "", size: 14, weight: .semibold, centered: true))
+            if let secondary = lesson["secondary"] as? String, !secondary.isEmpty { lines.addArrangedSubview(label(secondary, size: 11, weight: .light, color: .secondaryLabel, centered: true)) }
+            if lesson["changed"] as? Bool == true { lines.addArrangedSubview(label("대체", size: 11, weight: .bold, color: .systemIndigo, centered: true)) }
+            let lessonBox = UIView()
+            if lesson["changed"] as? Bool == true { lessonBox.backgroundColor = UIColor.systemIndigo.withAlphaComponent(0.12) }
+            pin(lines, to: lessonBox, inset: 3)
+            lessonBox.accessibilityLabel = lesson["semantics"] as? String
+            if let action = lesson["action"] as? String {
+              let tap = UIButton(type: .custom)
+              tap.accessibilityLabel = lesson["semantics"] as? String
+              tap.addAction(UIAction { [weak self] _ in self?.emit(action) }, for: .touchUpInside)
+              pin(tap, to: lessonBox)
+            }
+            values.addArrangedSubview(lessonBox)
+          }
+        } else { values.addArrangedSubview(label("—", size: 14, weight: .semibold, color: .tertiaryLabel, centered: true)) }
+        box.addSubview(values); values.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([values.leadingAnchor.constraint(equalTo: box.leadingAnchor), values.trailingAnchor.constraint(equalTo: box.trailingAnchor), values.centerYAnchor.constraint(equalTo: box.centerYAnchor)])
+        row.addArrangedSubview(box)
+        if let first = firstCell { box.widthAnchor.constraint(equalTo: first.widthAnchor).isActive = true } else { firstCell = box }
+      }
+      table.addArrangedSubview(row)
+    }
+    let horizontal = UIScrollView()
+    horizontal.alwaysBounceHorizontal = false
+    horizontal.showsVerticalScrollIndicator = false
+    horizontal.contentInsetAdjustmentBehavior = .never
+    horizontal.addSubview(all); all.translatesAutoresizingMaskIntoConstraints = false
+    let wide = model["horizontal"] as? Bool == true
+    NSLayoutConstraint.activate([all.topAnchor.constraint(equalTo: horizontal.contentLayoutGuide.topAnchor), all.leadingAnchor.constraint(equalTo: horizontal.contentLayoutGuide.leadingAnchor), all.trailingAnchor.constraint(equalTo: horizontal.contentLayoutGuide.trailingAnchor), all.bottomAnchor.constraint(equalTo: horizontal.contentLayoutGuide.bottomAnchor), all.heightAnchor.constraint(equalToConstant: totalHeight), all.widthAnchor.constraint(greaterThanOrEqualTo: horizontal.frameLayoutGuide.widthAnchor)])
+    if wide { all.widthAnchor.constraint(greaterThanOrEqualToConstant: CGFloat(34 + columns.count * 64)).isActive = true }
+    let fit = all.widthAnchor.constraint(equalTo: horizontal.frameLayoutGuide.widthAnchor); fit.priority = .defaultHigh; fit.isActive = true
+    horizontal.heightAnchor.constraint(equalToConstant: totalHeight + (wide ? 16 : 0)).isActive = true
+    gridScroll = horizontal
+    DispatchQueue.main.async { [weak horizontal, weak self] in
+      guard let horizontal = horizontal else { return }
+      horizontal.layoutIfNeeded()
+      horizontal.contentOffset.x = min(self?.horizontalOffset ?? 0, max(0,horizontal.contentSize.width - horizontal.bounds.width))
+    }
+    return horizontal
+  }
+  private func addMeals(to content: UIStackView) {
+    let dateRow = stack(axis: .horizontal, spacing: 8)
+    let previous = button("‹", action: "previous")
+    previous.widthAnchor.constraint(equalToConstant: 44).isActive = true
+    previous.accessibilityLabel = "이전 날짜"
+    dateRow.addArrangedSubview(previous)
+    let date = button(model["date"] as? String ?? "날짜 선택", action: "date")
+    dateRow.addArrangedSubview(date)
+    let next = button("›", action: "next")
+    next.widthAnchor.constraint(equalToConstant: 44).isActive = true
+    next.accessibilityLabel = "다음 날짜"
+    dateRow.addArrangedSubview(next)
+    content.addArrangedSubview(dateRow)
+    switch model["status"] as? String {
+    case "ready":
+      for meal in model["meals"] as? [[String:Any]] ?? [] {
+        let body = stack(spacing: 8)
+        let header = stack(axis: .horizontal, spacing: 8)
+        header.addArrangedSubview(label(meal["type"] as? String ?? "", size: 20, weight: .bold))
+        header.addArrangedSubview(label(meal["calories"] as? String ?? "", size: 14, color: .secondaryLabel))
+        body.addArrangedSubview(header)
+        for dish in meal["dishes"] as? [[String:String]] ?? [] {
+          let text = stack(spacing: 3)
+          text.addArrangedSubview(label(dish["name"] ?? "", size: 16, weight: .semibold))
+          let warning = dish["warning"] ?? ""
+          if !warning.isEmpty { text.addArrangedSubview(label(warning, size: 14, weight: .semibold, color: .systemRed)) }
+          if let allergens = dish["allergens"], !allergens.isEmpty { text.addArrangedSubview(label(allergens, size: 13, color: .secondaryLabel)) }
+          let dishBox = UIView(); dishBox.layer.cornerRadius = 12
+          if !warning.isEmpty { dishBox.backgroundColor = UIColor.systemRed.withAlphaComponent(0.1) }
+          pin(text, to: dishBox, inset: 6); body.addArrangedSubview(dishBox)
+        }
+        let card = UIView(); card.backgroundColor = .secondarySystemGroupedBackground; card.layer.cornerRadius = 18
+        pin(body, to: card, inset: 14); content.addArrangedSubview(card)
+      }
+    case "empty": content.addArrangedSubview(result("등록된 급식이 없습니다", detail: "다른 날짜의 식단을 확인해 주세요.", symbol: "fork.knife.circle"))
+    case "error": content.addArrangedSubview(result("급식을 불러오지 못했어요", detail: "잠시 후 다시 시도해 주세요.", symbol: "exclamationmark.circle")); content.addArrangedSubview(button("다시 시도", action: "retry"))
+    default: content.addArrangedSubview(loading())
+    }
+    if model["showToday"] as? Bool == true { content.addArrangedSubview(button("오늘로 돌아가기", action: "today")) }
   }
 }

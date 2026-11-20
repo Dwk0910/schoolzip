@@ -1,10 +1,12 @@
 import 'package:material_ui/material_ui.dart' show Icons;
 
 import 'dart:io';
+
+import 'native_home.dart';
+
 import 'dart:ui' show ImageFilter;
 
 import 'package:cupertino_ui/cupertino_ui.dart';
-import 'package:flutter/services.dart';
 
 class HomeTabsLayout extends StatelessWidget {
   final int index;
@@ -20,16 +22,16 @@ class HomeTabsLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (Platform.isIOS) {
+      final bridge = NativeHomeBridge.instance;
+      bridge.actions['tabs'] = (_, value) => onChanged(value as int);
+      bridge.publish('tabs', {'index': index});
       return Stack(
         fit: StackFit.expand,
         children: [
-          child,
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: 70 + MediaQuery.paddingOf(context).bottom,
-            child: _NativeTabs(index: index, onChanged: onChanged),
+          Offstage(offstage: true, child: child),
+          UiKitView(
+            viewType: 'schoolzip/main-tabs',
+            onPlatformViewCreated: (_) => bridge.flush(),
           ),
         ],
       );
@@ -164,47 +166,6 @@ class HomeTabsLayout extends StatelessWidget {
       ],
     );
   }
-}
-
-class _NativeTabs extends StatefulWidget {
-  final int index;
-  final ValueChanged<int> onChanged;
-  const _NativeTabs({required this.index, required this.onChanged});
-  @override
-  State<_NativeTabs> createState() => _NativeTabsState();
-}
-
-class _NativeTabsState extends State<_NativeTabs> {
-  MethodChannel? channel;
-  @override
-  void didUpdateWidget(_NativeTabs oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.index != widget.index) {
-      channel?.invokeMethod<void>('select', widget.index);
-    }
-  }
-
-  @override
-  void dispose() {
-    channel?.setMethodCallHandler(null);
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => UiKitView(
-    viewType: 'schoolzip/tabs',
-    onPlatformViewCreated: (id) {
-      if (!mounted) return;
-      final bridge = MethodChannel('schoolzip/tabs/$id');
-      channel = bridge;
-      bridge.setMethodCallHandler((call) async {
-        if (mounted && call.method == 'tap') {
-          widget.onChanged(call.arguments as int);
-        }
-      });
-      bridge.invokeMethod<void>('select', widget.index);
-    },
-  );
 }
 
 /// Keep each tab alive without adding a custom page transition over the
