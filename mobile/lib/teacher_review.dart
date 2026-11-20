@@ -119,3 +119,69 @@ class _TeacherReviewPageState extends State<TeacherReviewPage> {
     ),
   );
 }
+
+/// Open the review route before asking the server for candidates.
+class TeacherReviewLoader extends StatefulWidget {
+  final String title;
+  final Future<List<Map<String, String>>> Function() load;
+  const TeacherReviewLoader({
+    super.key,
+    required this.title,
+    required this.load,
+  });
+  @override
+  State<TeacherReviewLoader> createState() => _TeacherReviewLoaderState();
+}
+
+class _TeacherReviewLoaderState extends State<TeacherReviewLoader> {
+  List<Map<String, String>>? options;
+  bool failed = false;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) load();
+    });
+  }
+
+  Future<void> load() async {
+    setState(() => failed = false);
+    try {
+      final result = await widget.load();
+      if (mounted) setState(() => options = result);
+    } catch (_) {
+      if (mounted) setState(() => failed = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (options != null) {
+      return TeacherReviewPage(title: widget.title, options: options!);
+    }
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        middle: Text(widget.title),
+        leading: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: () => Navigator.pop(context),
+          child: const Text('취소'),
+        ),
+      ),
+      child: SafeArea(
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!failed) const CupertinoActivityIndicator(),
+              const SizedBox(height: 12),
+              Text(failed ? '이름을 불러오지 못했어요.' : '이름을 불러오는 중이에요.'),
+              if (failed)
+                CupertinoButton(onPressed: load, child: const Text('다시 시도')),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

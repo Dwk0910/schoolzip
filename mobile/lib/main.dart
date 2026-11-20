@@ -1106,28 +1106,40 @@ class _WeeklyPageState extends State<WeeklyPage> with WidgetsBindingObserver {
     bool shared, [
     List<Map<String, String>>? supplied,
   ]) async {
-    final options =
+    if (!mounted) return;
+    Future<List<Map<String, String>>> loadOptions() async =>
         supplied ??
         (shared
             ? await sharing.shared(currentTeacherRoster, teacherNames)
             : await sharing.previous(currentTeacherRoster, teacherNames));
-    if (!mounted) return;
     final title = shared ? '학교 공유 이름 확인' : '이전 이름 연결';
     final List<Map<String, String>>? selected;
     if (Platform.isIOS) {
-      final result = await const MethodChannel('schoolzip/editors')
-          .invokeMethod<List<dynamic>>('reviewTeacherNames', {
-            'title': title,
-            'options': options,
-          });
-      selected = result
-          ?.map((e) => Map<String, String>.from(e as Map))
-          .toList();
+      final loader = MethodChannel(
+        'schoolzip/review/${DateTime.now().microsecondsSinceEpoch}',
+      );
+      loader.setMethodCallHandler((call) async {
+        if (call.method == 'load') return loadOptions();
+        throw MissingPluginException();
+      });
+      try {
+        final result = await const MethodChannel('schoolzip/editors')
+            .invokeMethod<List<dynamic>>('reviewTeacherNames', {
+              'title': title,
+              'options': ?supplied,
+              if (supplied == null) 'loader': loader.name,
+            });
+        selected = result
+            ?.map((e) => Map<String, String>.from(e as Map))
+            .toList();
+      } finally {
+        loader.setMethodCallHandler(null);
+      }
     } else {
       selected = await Navigator.push<List<Map<String, String>>>(
         context,
         CupertinoPageRoute(
-          builder: (_) => TeacherReviewPage(title: title, options: options),
+          builder: (_) => TeacherReviewLoader(title: title, load: loadOptions),
         ),
       );
     }

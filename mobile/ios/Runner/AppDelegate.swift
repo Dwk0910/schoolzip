@@ -238,7 +238,7 @@ private final class NativeEditors {
       case "allergies":
         page = NativeAllergies(names: args["names"] as? [String] ?? [], selected: args["selected"] as? [Int] ?? [], finish: reply)
       case "reviewTeacherNames":
-        page = NativeTeacherReview(options: args["options"] as? [[String:String]] ?? [], title: args["title"] as? String ?? "이름 확인", finish: reply)
+        page = NativeTeacherReview(options: args["options"] as? [[String:String]] ?? [], title: args["title"] as? String ?? "이름 확인", loader: (args["loader"] as? String).map { FlutterMethodChannel(name: $0, binaryMessenger: messenger) }, finish: reply)
       case "teachers": page = NativeTeacherList(channel: self.channel, finish: reply)
       case "teacher":
         let editor = NativeTeacherEditor(entry: args as? [String: String] ?? [:])
@@ -437,19 +437,24 @@ private final class NativeTeacherEditor: UITableViewController, UITextFieldDeleg
   }
 }
 private final class NativeTeacherReview: UITableViewController, UISearchResultsUpdating {
-  let options: [[String:String]]
+  var options: [[String:String]]
+  let loader: FlutterMethodChannel?
+  var loading: Bool
+  var started = false
+  var closed = false
+  var loadFailed = false
   let finish: FlutterResult
   var selected = Set<Int>()
   var visible: [Int] = []
-  lazy var bulk: Set<Int> = {
+  var bulk: Set<Int> {
     let keys = Dictionary(grouping: options.indices, by: { options[$0]["key"] ?? "" })
     let sources = Dictionary(grouping: options.indices, by: { options[$0]["source"] ?? "" })
     return Set(options.indices.filter { keys[options[$0]["key"] ?? ""]?.count == 1 && sources[options[$0]["source"] ?? ""]?.count == 1 })
-  }()
+  }
   var bulkSelected: Bool { !selected.isEmpty && bulk.isSubset(of: selected) }
   let search = UISearchController(searchResultsController: nil)
-  init(options: [[String:String]], title: String, finish: @escaping FlutterResult) {
-    self.options = options; self.finish = finish
+  init(options: [[String:String]], title: String, loader: FlutterMethodChannel?, finish: @escaping FlutterResult) {
+    self.options = options; self.finish = finish; self.loader = loader; self.loading = loader != nil
     super.init(style: .insetGrouped); self.title = title; visible = Array(options.indices)
   }
   required init?(coder: NSCoder) { fatalError() }
@@ -461,9 +466,41 @@ private final class NativeTeacherReview: UITableViewController, UISearchResultsU
     navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancel))
     navigationItem.rightBarButtonItem = UIBarButtonItem(title: "선택 적용", style: .done, target: self, action: #selector(apply))
     navigationItem.rightBarButtonItem?.isEnabled = false
+    updateLoading()
   }
-  @objc func cancel() { dismiss(animated: true) { self.finish(nil) } }
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    if !started && loader != nil { started = true; load() }
+  }
+  @objc private func load() {
+    guard let loader = loader, !closed else { return }
+    loading = true; loadFailed = false; updateLoading()
+    loader.invokeMethod("load", arguments: nil) { [weak self] result in
+      guard let self = self, !self.closed else { return }
+      self.loading = false
+      if let values = result as? [[String:String]] {
+        self.options = values; self.visible = Array(values.indices)
+      } else { self.loadFailed = true }
+      self.updateLoading()
+    }
+  }
+  private func updateLoading() {
+    navigationItem.searchController = loading || loadFailed ? nil : search
+    if loading || loadFailed {
+      let background = UIView(); let stack = UIStackView(); stack.axis = .vertical; stack.alignment = .center; stack.spacing = 12
+      if loading { let spinner = UIActivityIndicatorView(style: .medium); spinner.startAnimating(); stack.addArrangedSubview(spinner) }
+      let label = UILabel(); label.text = loading ? "이름을 불러오는 중이에요." : "이름을 불러오지 못했어요."; label.font = .preferredFont(forTextStyle: .body); label.textColor = .secondaryLabel
+      stack.addArrangedSubview(label)
+      if loadFailed { let retry = UIButton(type: .system); retry.setTitle("다시 시도", for: .normal); retry.addTarget(self, action: #selector(load), for: .touchUpInside); stack.addArrangedSubview(retry) }
+      background.addSubview(stack); stack.translatesAutoresizingMaskIntoConstraints = false
+      NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: background.centerXAnchor), stack.centerYAnchor.constraint(equalTo: background.centerYAnchor)])
+      tableView.backgroundView = background
+    } else { tableView.backgroundView = nil }
+    tableView.reloadData()
+  }
+  @objc func cancel() { closed = true; dismiss(animated: true) { self.finish(nil) } }
   @objc func apply() {
+    closed = true
     let values = selected.sorted().map { options[$0] }
     dismiss(animated: true) { self.finish(values) }
   }
@@ -472,7 +509,7 @@ private final class NativeTeacherReview: UITableViewController, UISearchResultsU
     visible = options.indices.filter { query.isEmpty || (options[$0]["title"]! + options[$0]["detail"]!).localizedCaseInsensitiveContains(query) }
     tableView.reloadData()
   }
-  override func numberOfSections(in tableView: UITableView) -> Int { 2 }
+  override func numberOfSections(in tableView: UITableView) -> Int { loading || loadFailed ? 0 : 2 }
   override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
     if section == 0 { return nil }
     return options.isEmpty ? "적용할 후보가 없습니다." : "이름과 과목을 확인해 선택해 주세요. 기존 이름은 덮어쓰지 않아요. 중복 후보는 전체 선택에서 제외되니 직접 골라 주세요."
